@@ -40,7 +40,7 @@ if (relVersion) {
 
 subprojects {
 
-    group = 'io.orkes.queue'
+    group = 'io.orkes.queues'
     version = "${appVersion}"
 
     apply plugin: 'java'
