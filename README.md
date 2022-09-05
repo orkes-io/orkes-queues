@@ -38,16 +38,11 @@ Orkes Queues provides `at-least once` delivery semantics.
 Server Jar is published on maven central at the following location:
 [TBD](http://orkes.io)
 
-#### Production Configuration Recommendations
-The container and server jar published comes with sensible defaults that works for most use cases.
-
-Please see [CONFIGURATION](CONFIGURATION.md) for details.
-
 ### Contributions
 We welcome community contributions and PRs to this repository.
 
 ### Get Support 
-Use Github issue tracking for filing issues and Discussion Forum for any other questions, ideas or support requests.
+Use GitHub issue tracking for filing issues and Discussion Forum for any other questions, ideas or support requests.
 Orkes (http://orkes.io) development team creates and maintains the Orkes-Conductor releases.
 
 ### License
@@ -57,6 +52,3 @@ Licensed under Orkes Community License.  You may obtain a copy of the License at
 https://github.com/orkes-io/licenses/blob/main/community/LICENSE.txt
 ```
 Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the specific language governing permissions and limitations under the License.
-
-**TL;DR**
-Orkes Community License is an open source license and allows anyone to download and use Orkes Conductor versions.
