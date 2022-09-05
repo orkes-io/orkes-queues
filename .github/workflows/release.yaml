@@ -30,9 +30,6 @@ jobs:
           echo "Release version is $REL_VER"
           echo "RELEASE_VERSION=$REL_VER" >> $GITHUB_ENV
           ./gradlew publish -Pversion=$REL_VER -PmavenCentral -Pusername=${{ secrets.SONATYPE_USERNAME }} -Ppassword=${{ secrets.SONATYPE_PASSWORD }}
-          echo "Building UI"
-          docker/build-ui.sh
-          echo "Done building UI"
     env:
       ORG_GRADLE_PROJECT_signingKeyId: ${{ secrets.SIGNING_KEY_ID }}
       ORG_GRADLE_PROJECT_signingKey: ${{ secrets.SIGNING_KEY }}
