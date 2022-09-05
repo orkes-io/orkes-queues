@@ -1,0 +1,207 @@
+                           Orkes Community License Agreement
+
+PLEASE READ THIS ORKES COMMUNITY LICENSE AGREEMENT (“Agreement”).  BY 
+DOWNLOADING, INSTALLING, USING OR DISTRIBUTING THE SOFTWARE 
+(DEFINED BELOW) (“Software”), YOU AND ANY ENTITY YOU REPRESENT (“Licensee” 
+or “you”) AGREE TO BE BOUND BY THIS AGREEMENT WITH ORKES, INC., A 
+DELAWARE CORPORATION (“Orkes”).  IF AT ANYTIME YOU DO NOT AGREE TO 
+ALL OF THE TERMS OF THIS AGREEMENT, THEN DO NOT DOWNLOAD, INSTALL, 
+USE OR DISTRIBUTE THE SOFTWARE AND IMMEDIATELY CEASE ALL USE OF THE 
+SOFTWARE.
+
+By agreeing to this Agreement, you represent that you have full power, capacity and authority to 
+accept the terms of this Agreement.  If you are accepting the terms of this Agreement on behalf 
+of an employer or another entity, you and such employer or other entity represent that you have 
+full legal authority to bind such employer or other entity to this Agreement.  
+Orkes and Licensee agree to the following terms and conditions:
+
+                                  Article 1 
+Definitions
+1.1	“Conductor Community Software” means the Conductor community software, 
+sometimes referred to by the community as Netflix Conductor, contributed by the community 
+under an Apache 2.0 license, which has been made available at 
+https://github.com/Netflix/conductor.
+1.2	“Intellectual Property Rights” mean all legally protectable proprietary or intellectual 
+property rights in the United States, and anywhere in the world, past, present and future, 
+including without limitation any patent, copyright, or trade secret.  For the purposes of this 
+Agreement, Intellectual Property Rights do not include trademarks. 
+1.3	“Source Code” means software in source code or human readable form.
+1.4	“Source Materials” means those portions of the Software furnished to Licensee by Orkes 
+in Source Code.
+1.5	“Software” means the Orkes software licensed under this Agreement as may be identified 
+at the following url: https://github.com/orkes-io/licenses/blob/main/community/SOFTWARE.txt 
+
+                                  Article 2 
+License Grant
+2.1	Software License.  As of the Effective Date, subject to the terms and conditions of this 
+Agreement, including, without limitation, Article 3 (License Restrictions and Intellectual 
+Property Rights), Orkes grants Licensee a limited, non-exclusive, non-transferable, and non-
+sublicensable license, to: 
+      (a)	evaluate the Software in Licensee’s development and testing environments;
+      (b)	use the Software internally for Licensee’s internal business purposes;
+      (c)	modify and make derivative works of the Software;
+      (d)	reproduce the Software; and
+      (e)	distribute Software in binary or Source Code form.
+2.2	Conditions to License.  The licenses under Article 2 (License Grants) are conditioned 
+upon Licensee’s compliance with the terms of this Agreement including without limitation 
+Article 3 (License Restrictions and Intellectual Property Rights).
+2.3	Third Party Intellectual Property.  The Software may use, include or rely on third-party 
+software or other Intellectual Property Rights (“Third-Party Intellectual Property”).  Other than 
+the Conductor Community Software included in the Software that is licensed under the Apache 
+2.0 license, any Third Party Intellectual Property that Orkes provides to Licensee is for 
+convenience only, and is not part of the Software and is not licensed hereunder.  Licensee is 
+solely responsible for procuring and complying with, and shall procure and comply with, any 
+necessary license rights if Licensee uses any Third-Party Intellectual Property. 
+
+                                  Article 3 
+License Restrictions and Intellectual Property Rights
+3.1	Orkes Software Notice.  Licensee shall not remove or modify any Orkes or third-party 
+copyright or other proprietary notices on the Software.  Additionally, Licensee shall provide the 
+following notice on each copy of Software:
+THIS SOFTWARE IS MADE AVAILABLE BY ORKES, INC., A DELAWARE 
+CORPORATION (“Orkes”) UNDER THE ORKES COMMUNITY LICENSE 
+AGREEMENT (“Agreement”).  BY DOWNLOADING, INSTALLING, USING 
+OR DISTRIBUTING THE SOFTWARE, YOU AND ANY ENTITY YOU 
+REPRESENT (“Licensee” or “you”) AGREE TO BE BOUND BY THE ORKES 
+COMMUNITY LICENSE AGREEMENT AT ALL TIMES.  IF YOU DO NOT 
+AGREE TO ALL OF THE TERMS OF THE ORKES COMMUNITY LICENSE 
+AGREEMENT AT ANY TIME, THEN DO NOT DOWNLOAD, INSTALL, 
+USE OR DISTRIBUTE THE SOFTWARE AND YOU SHALL 
+IMMEDIATELY CEASE ANY USE OF THE SOFTWARE.
+3.2	Restrictions.  Licensee agrees that Licensee shall not: (i) use the Software outside of the 
+scope of the license granted hereunder or in violation of any restrictions hereunder; or (ii) export 
+or re-export the Software directly or indirectly in violation of the laws of the United States or any 
+other jurisdiction.
+3.3	Competitive Products.  Licensee shall not (i) use or provide the Software as a service for 
+any third party (including as software-as-a-service, time-sharing or service bureau), (ii) 
+otherwise provide the Software to a third party in competition with the Software or in 
+competition with Orkes, (iii) use the Software (including any Source Materials) to develop any 
+product, technology or service that competes with the Software or any Orkes product or service 
+or (iv) allow its personnel who have access to the Software to develop any such competitive 
+product, technology or service.
+3.4	Open Source Software.  Licensee shall not use or combine the Source Materials (or the 
+Software) with open-source software or other items in any manner which would subject the 
+Software to any additional open source software terms and conditions.  For clarity, the foregoing 
+does not prohibit Licensee from combining and using the Software with Conductor code that is 
+subject only to the Apache 2.0 license or subject to an Orkes community license. 
+3.5	Ownership by Orkes.  Orkes retains all Orkes’ Intellectual Property Rights covering or 
+embodied in the Software, subject to the limited licenses granted to Licensee under this 
+Agreement and any third-party rights in the Software.    
+3.6	No Trademark License.  Licensee acquires no right or license to any trademarks of Orkes 
+hereunder. 
+3.7	No Other Rights.  All Intellectual Property Rights of Orkes not expressly granted to 
+Licensee in this Agreement are expressly reserved by Orkes.  Without limitation, Licensee 
+receives no right or license, by implication, estoppel or otherwise, to any software, product, 
+technology or Intellectual Property Rights not embodied in the Software, even if such other 
+software, technology or Intellectual Property Rights are useful or necessary in connection with 
+the Software.  Licensee agrees not to claim, assert or assist in the claim or assertion of any such 
+license or right disclaimed as provided above. 
+
+                                  Article 4 
+No Warranty
+THE SOFTWARE IS PROVIDED “AS-IS” WITHOUT ANY WARRANTY OF ANY KIND.  
+TO THE MAXIMUM EXTENT PERMITTED BY LAW, ORKES DISCLAIMS ALL 
+WARRANTIES, CONDITIONS AND REPRESENTATIONS (EXPRESS OR IMPLIED, 
+ORAL OR WRITTEN) WITH RESPECT TO THE SOFTWARE, INCLUDING, WITHOUT 
+LIMITATION, WARRANTIES OF MERCHANTABILITY OR FITNESS FOR A 
+PARTICULAR PURPOSE.
+
+                                  Article 5 
+Licensee Responsibility
+Licensee, and not Orkes, is solely responsible for any warranties and covenants Licensee makes in 
+connection with the Licensee’s products and services as well as the Software and any results thereof, and 
+any resulting claims from any customers or other third party.  Without limiting the foregoing, Licensee is 
+responsible for complying with applicable law in connection with use of the Software and verifying and 
+validating the suitability and reliability of the Software for all of Licensee’s use thereof.  Further, 
+Licensee must take prudent steps to protect against failures when the Software or results thereof is 
+incorporated in a system or application, including providing back-up and shut-down mechanisms.
+
+                                  Article 6 
+Limitation of Liability
+6.1	Limitation of Liability.  ORKES SHALL NOT BE LIABLE TO LICENSEE FOR ANY 
+SPECIAL, INDIRECT, INCIDENTAL, EXEMPLARY OR CONSEQUENTIAL DAMAGES, 
+INCLUDING, WITHOUT LIMITATION, LOST PROFITS, BUSINESS INTERRUPTION OR 
+LOSS OF INFORMATION, IN ANY WAY RELATED TO THIS AGREEMENT, 
+REGARDLESS OF WHETHER SUCH PARTY WAS ADVISED OF THE POSSIBILITY OF 
+ANY OF THE FOREGOING.  IN NO EVENT SHALL THE TOTAL COLLECTIVE 
+LIABILITY OF ORKES FOR ALL CLAIMS HEREUNDER OR IN ANY WAY RELATED 
+TO THIS AGREEMENT EXCEED THE GREATER OF (I) THE TWENTY PERCENT (20%) 
+OF AGGREGATE AMOUNTS PAID OR OWED BY LICENSEE UNDER THIS 
+AGREEMENT IN THE PRECEDING TWELVE (12) MONTHS OR (II) ONE HUNDRED 
+DOLLARS ($100).
+6.2	Allocation of Risk.  The warranty disclaimer and limitations of liability set forth in this 
+Agreement shall apply irrespective of any failure of the essential purpose of any limited remedy.  
+Licensee acknowledges and agrees that, but for these provisions, Orkes would not have made the 
+Software available to Licensee under the terms contemplated under this Agreement. 
+6.3	Applicable Law.  The warranty disclaimer and limitations of liability set forth in this 
+Agreement shall not apply to the extent prohibited by law, in which case the disclaimer or 
+limitation shall be modified to disclaim and/or limit in accordance with applicable law.  Without 
+limiting the foregoing, to the extent required by law, the foregoing limitations shall not apply to 
+claims due to fraud, bodily injury or death.
+
+                                  Article 7 
+Termination
+7.1	Term.  This Agreement shall become effective until terminated.
+7.2	Termination for Cause.  Orkes may terminate this Agreement upon written notice to the 
+other upon the other Licensee’s material breach of this Agreement, which breach is incurable or, 
+if curable, remains uncured for thirty (30) days after notice to Licensee. 
+7.3	Termination for Bankruptcy.  If Licensee (a) becomes insolvent or bankrupt, (b) dissolves 
+or ceases to conduct business in the ordinary course, (c) makes an assignment for the benefit of 
+its creditors, (d) commences any insolvency, receivership, bankruptcy or other similar 
+proceeding for the settlement of its debts or (e) has commenced against it any insolvency, 
+receivership, bankruptcy or other similar proceeding for the settlement of its debts that is not 
+dismissed within thirty (30) days after notice of such proceeding, then Orkes may terminate this 
+Agreement immediately upon written notice to Licensee. 
+7.4	Effect of Termination.  If this Agreement is terminated or expires for any reason, all 
+rights granted hereunder to Licensee shall terminate, and Licensee shall immediately cease all 
+use of the Software.  The provisions of Article 1 (Definitions), Article 3 (License Restrictions 
+and Intellectual Property Rights), Article 4 (No Warranty), Article 5 (Limitation of Liability), 
+Article 6 (Term and Termination) and Article 7 (Miscellaneous) shall survive termination of this 
+Agreement.
+
+                                  Article 8 
+Miscellaneous
+8.1	Relationship of Parties.  The Parties to this Agreement are independent contractors, and 
+this Agreement shall not establish any relationship of partnership, joint venture, employment, 
+franchise or agency between the Parties.  Neither Party shall have the power to bind the other or 
+incur obligations on the other’s behalf without the other Party’s prior written consent.
+8.2	Assignment.  Licensee shall not have the right to assign this Agreement, in whole or in 
+part, without Orkes’s prior written consent; assignment by operation of law or change of control 
+Licensee is prohibited.  Orkes may assign this Agreement without consent.  Any attempt to 
+assign this Agreement, other than as permitted above, shall be null and void.
+8.3	Federal Acquisition.  This provision applies to all acquisitions of the Software by or for 
+the Federal Government, whether by any prime contractor or subcontractor and whether under 
+any procurement contract, grant, cooperative agreement or other activity by or with the Federal 
+Government.  By accepting delivery of the Software, the Government agrees the Software 
+qualifies as “commercial” computer software within the meaning of the acquisition regulations 
+applicable to this procurement.  The terms and conditions of this Agreement shall pertain to the 
+Government’s use and disclosure of the software and shall supersede any conflicting contractual 
+terms or conditions.  If this Agreement fails to meet the Government’s needs or is inconsistent in 
+any respect with Federal law, the Government agrees to return the Software, unused, to Orkes.
+8.4	Governing Law.  This Agreement shall be governed by, and construed in accordance 
+with, the laws of the State of California, U.S.A., applicable to contracts made in full and 
+performed in the State of California, U.S.A., without reference to any conflict of law or choice of 
+law principles that would cause the application of laws of any other jurisdiction.  The United 
+Nations Convention on Contracts for the International Sales of Goods shall not apply to this 
+Agreement.  
+8.5	Jurisdiction and Venue.  Jurisdiction and venue for any dispute arising from or related to 
+this Agreement shall be in the state and federal courts of Santa Clara County, California, USA, 
+and each party hereby consents to the jurisdiction and venue of such courts. 
+8.6	Language of Agreement.  This Agreement is made in the English language only, and the 
+English language version shall control in all respects.  In the event that this Agreement is 
+translated into another language, such translation shall not be binding upon the Parties.   
+8.7	Severability.  If any provision of this Agreement, or the application thereof, shall for any 
+reason and to any extent be determined by a court of competent jurisdiction to be invalid or 
+unenforceable under applicable law, a valid provision that most closely matches the intent of the 
+original shall be substituted, and the remaining provisions of this Agreement shall be interpreted 
+so as best to reasonably effect its original intent.
+8.8	Waiver.  The failure by either Party to enforce any provision of this Agreement shall not 
+constitute a waiver of future enforcement of that or any other provision.
+8.9	Entire Agreement.  This Agreement contains the complete understanding and agreement 
+of the parties and supersedes all prior or contemporaneous agreements or understandings, oral or 
+written, relating to the subject matter herein.  Any waiver, modification or amendment of any 
+provision of this Agreement shall be effective only if in writing and signed by duly authorized 
+representatives of the Parties.  No inconsistent or additional terms or conditions in any document 
+provided by Licensee, including any purchase orders, purchase agreements, requests for 
+proposals, bills of lading or the like shall apply to this Agreement or the activities hereunder, and 
+any such terms or conditions are hereby rejected.

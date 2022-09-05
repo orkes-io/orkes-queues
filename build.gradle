@@ -1,0 +1,179 @@
+buildscript {
+    dependencies {
+        classpath "org.springframework.boot:spring-boot-gradle-plugin:2.5.7"
+        classpath 'com.diffplug.spotless:spotless-plugin-gradle:6.+'
+    }
+}
+
+plugins {
+    id 'io.spring.dependency-management' version '1.0.11.RELEASE'
+}
+
+ext {
+    group = 'io.orkes.queue'
+    appVersion = '0.0.1-SNAPSHOT'
+    springBootVersion = '2.5.6'
+
+    versions = [
+            conductorfork           : '3.10.7',
+            revTestContainer        : '1.17.2',
+            revGuava                : '30.0-jre',
+            log4j                   : '2.17.1',
+            revJedis                : '3.3.0',
+            revMockServerClient     : '5.12.0',
+            revCommonsLang          : '3.12.0',
+            revLombok               : '1.18.24',
+            revLucene               : '7.7.3',
+            revSpectator            : '0.122.0',
+            revOpenapi              : '1.6.+',
+            revAwsSdk               : '1.12.153',
+            revProtoBuf             : '3.13.0',
+            revRarefiedRedis        : '0.0.17'
+    ]
+}
+
+def relVersion = System.getenv('REL_VER')
+if (relVersion) {
+    println "Inferred version from env variable 'REL_VER': $relVersion"
+    appVersion = relVersion
+}
+
+subprojects {
+
+    group = 'io.orkes.queue'
+    version = "${appVersion}"
+
+    apply plugin: 'java'
+    apply plugin: 'io.spring.dependency-management'
+    apply plugin: 'maven-publish'
+    apply plugin: 'signing'
+    apply plugin: 'com.diffplug.spotless'
+
+    repositories {
+        mavenCentral()
+    }
+
+    java {
+        withSourcesJar()
+        withJavadocJar()
+    }
+
+    configurations {
+        compileOnly {
+            extendsFrom annotationProcessor
+        }
+        testCompileOnly {
+            extendsFrom annotationProcessor
+        }
+        all {
+            exclude group: 'org.apache.logging.log4j', module: 'log4j-slf4j-impl'
+            exclude group: 'org.slf4j', module: 'slf4j-log4j12'
+        }
+    }
+
+    dependencies {
+        implementation "org.apache.logging.log4j:log4j-core:${versions.log4j}!!"
+        implementation "org.apache.logging.log4j:log4j-api:${versions.log4j}!!"
+        implementation "org.apache.logging.log4j:log4j-slf4j-impl:${versions.log4j}!!"
+        implementation "org.apache.logging.log4j:log4j-jul:${versions.log4j}!!"
+        implementation "org.apache.logging.log4j:log4j-web:${versions.log4j}!!"
+        implementation "org.apache.logging.log4j:log4j-to-slf4j:${versions.log4j}!!"
+
+        compileOnly "org.projectlombok:lombok:${versions.revLombok}"
+        annotationProcessor "org.projectlombok:lombok:${versions.revLombok}"
+        testAnnotationProcessor "org.projectlombok:lombok:${versions.revLombok}"
+        implementation "org.apache.commons:commons-lang3:${versions.revCommonsLang}"
+    }
+
+    dependencyManagement {
+        imports {
+            mavenBom(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES)
+        }
+    }
+
+    test {
+        useJUnitPlatform()
+        testLogging {
+            events = ["SKIPPED", "FAILED"]
+            exceptionFormat = "full"
+            showStandardStreams = false
+        }
+    }
+
+
+    compileJava {
+        sourceCompatibility = 11
+        targetCompatibility = 11
+    }
+
+    spotless {
+        java {
+            googleJavaFormat().aosp()
+            removeUnusedImports()
+            importOrder('java', 'javax', 'org', 'com.netflix', 'io.orkes','', '\\#com.netflix', '\\#')
+            licenseHeaderFile("$rootDir/licenseheader.txt")
+        }
+    }
+    build.dependsOn(spotlessApply)
+
+
+    publishing {
+        publications {
+            mavenJava(MavenPublication) {
+                from components.java
+                pom {
+                    name = 'Orkes Conductor Community'
+                    description = 'Orkes supported version of open source Netflix Conductor'
+                    url = 'https://github.com/orkes-io/orkes-conductor-community'
+                    scm {
+                        connection = 'scm:git://github.com/orkes-io/orkes-conductor-community.git'
+                        developerConnection = 'scm:git://github.com/orkes-io/orkes-conductor-community.git'
+                        url = 'https://github.com/orkes-io/orkes-conductor-community'
+                    }
+                    licenses {
+                        license {
+                            name = 'Orkes Community License'
+                            url = 'https://github.com/orkes-io/licenses/community/LICENSE.txt'
+                        }
+                    }
+                    developers {
+                        developer {
+                            organization = 'Orkes'
+                            organizationUrl = 'https://orkes.io'
+                            name = 'Orkes Development Team'
+                            email = 'developers@orkes.io'
+                        }
+                    }
+                }
+            }
+        }
+
+        repositories {
+            maven {
+                if (project.hasProperty("mavenCentral")) {
+                    println "Publishing to Sonatype Repository"
+                    url = "https://s01.oss.sonatype.org/${project.version.endsWith('-SNAPSHOT') ? "content/repositories/snapshots/" : "service/local/staging/deploy/maven2/"}"
+                    credentials {
+                        username project.properties.username
+                        password project.properties.password
+                    }
+                }
+            }
+        }
+
+        def signingKeyId = findProperty('signingKeyId')
+        if(signingKeyId) {
+            println 'Signing the artifact with keys'
+            signing {
+                def signingKey = findProperty('signingKey')
+                def signingPassword = findProperty('signingPassword')
+                if (signingKeyId && signingKey && signingPassword) {
+                    useInMemoryPgpKeys(signingKeyId, signingKey, signingPassword)
+                }
+
+                sign publishing.publications
+            }
+        }
+
+    }
+}
