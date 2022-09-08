@@ -42,7 +42,7 @@ public class RedisQueueConfiguration {
     public QueueDAO getQueueDAOStandalone(
             JedisPool jedisPool,
             MeterRegistry registry,
-            RedisProperties queueRedisProperties,
+            QueueRedisProperties queueRedisProperties,
             ConductorProperties properties) {
         log.info("getQueueDAOStandalone init");
         return new RedisQueueDAO(registry, jedisPool, queueRedisProperties, properties);
@@ -54,7 +54,7 @@ public class RedisQueueConfiguration {
     public QueueDAO getQueueDAOSentinel(
             JedisSentinelPool jedisSentinelPool,
             MeterRegistry registry,
-            RedisProperties queueRedisProperties,
+            QueueRedisProperties queueRedisProperties,
             ConductorProperties properties) {
         return new RedisQueueDAO(registry, jedisSentinelPool, queueRedisProperties, properties);
     }
@@ -65,7 +65,7 @@ public class RedisQueueConfiguration {
     public QueueDAO getQueueDAOCluster(
             JedisCluster jedisCluster,
             MeterRegistry registry,
-            RedisProperties queueRedisProperties,
+            QueueRedisProperties queueRedisProperties,
             ConductorProperties properties) {
         return new ClusteredRedisQueueDAO(registry, jedisCluster, queueRedisProperties, properties);
     }
@@ -73,7 +73,7 @@ public class RedisQueueConfiguration {
     @Bean
     @Primary
     @ConditionalOnProperty(name = "conductor.queue.type", havingValue = "redis_standalone")
-    protected JedisPool getJedisPoolStandalone(RedisProperties redisProperties) {
+    protected JedisPool getJedisPoolStandalone(QueueRedisProperties redisProperties) {
         ConfigurationHostSupplier hostSupplier = new ConfigurationHostSupplier(redisProperties);
         JedisPoolConfig config = new JedisPoolConfig();
         config.setMinIdle(2);
@@ -105,7 +105,7 @@ public class RedisQueueConfiguration {
     @Bean
     @Primary
     @ConditionalOnProperty(name = "conductor.queue.type", havingValue = "redis_sentinel")
-    public JedisSentinelPool getJedisPoolSentinel(RedisProperties properties) {
+    public JedisSentinelPool getJedisPoolSentinel(QueueRedisProperties properties) {
         ConfigurationHostSupplier hostSupplier = new ConfigurationHostSupplier(properties);
         GenericObjectPoolConfig<?> genericObjectPoolConfig = new GenericObjectPoolConfig<>();
         genericObjectPoolConfig.setMinIdle(properties.getMinIdleConnections());
@@ -150,7 +150,7 @@ public class RedisQueueConfiguration {
     @Bean
     @Primary
     @ConditionalOnProperty(name = "conductor.queue.type", havingValue = "redis_cluster")
-    public JedisCluster createJedisCommands(RedisProperties properties) {
+    public JedisCluster createJedisCommands(QueueRedisProperties properties) {
         ConfigurationHostSupplier hostSupplier = new ConfigurationHostSupplier(properties);
 
         GenericObjectPoolConfig<?> genericObjectPoolConfig = new GenericObjectPoolConfig<>();

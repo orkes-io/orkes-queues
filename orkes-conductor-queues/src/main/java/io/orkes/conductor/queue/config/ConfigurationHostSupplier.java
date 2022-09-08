@@ -23,9 +23,9 @@ public class ConfigurationHostSupplier {
 
     private static final Logger log = LoggerFactory.getLogger(ConfigurationHostSupplier.class);
 
-    private final RedisProperties properties;
+    private final QueueRedisProperties properties;
 
-    public ConfigurationHostSupplier(RedisProperties properties) {
+    public ConfigurationHostSupplier(QueueRedisProperties properties) {
         this.properties = properties;
     }
 

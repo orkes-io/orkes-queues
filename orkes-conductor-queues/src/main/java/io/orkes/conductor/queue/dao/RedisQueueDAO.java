@@ -17,7 +17,7 @@ import com.netflix.conductor.dao.QueueDAO;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.orkes.conductor.mq.ConductorQueue;
 import io.orkes.conductor.mq.redis.single.ConductorRedisQueue;
-import io.orkes.conductor.queue.config.RedisProperties;
+import io.orkes.conductor.queue.config.QueueRedisProperties;
 import lombok.extern.slf4j.Slf4j;
 import redis.clients.jedis.JedisPoolAbstract;
 
@@ -31,7 +31,7 @@ public class RedisQueueDAO extends BaseRedisQueueDAO implements QueueDAO {
     public RedisQueueDAO(
             MeterRegistry registry,
             JedisPoolAbstract jedisPool,
-            RedisProperties queueRedisProperties,
+            QueueRedisProperties queueRedisProperties,
             ConductorProperties conductorProperties) {
 
         super(queueRedisProperties, conductorProperties);

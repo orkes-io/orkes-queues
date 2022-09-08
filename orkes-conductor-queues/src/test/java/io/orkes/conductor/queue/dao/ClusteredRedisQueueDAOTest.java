@@ -17,7 +17,7 @@ import com.netflix.conductor.core.config.ConductorProperties;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.orkes.conductor.mq.ConductorQueue;
 import io.orkes.conductor.mq.QueueMessage;
-import io.orkes.conductor.queue.config.RedisProperties;
+import io.orkes.conductor.queue.config.QueueRedisProperties;
 import org.junit.Rule;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.utility.DockerImageName;
@@ -64,7 +64,7 @@ class ClusteredRedisQueueDAOTest {
 
         JedisCluster jedisCluster = new JedisCluster(hostAndPorts);
         ConductorProperties properties = new ConductorProperties();
-        RedisProperties queueRedisProperties = new RedisProperties(properties);
+        QueueRedisProperties queueRedisProperties = new QueueRedisProperties(properties);
         ClusteredRedisQueueDAO clusteredRedisQueue =
                 new ClusteredRedisQueueDAO(
                         registry, jedisCluster, queueRedisProperties, properties);

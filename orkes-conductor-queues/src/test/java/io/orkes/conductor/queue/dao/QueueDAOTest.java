@@ -18,7 +18,7 @@ import com.netflix.conductor.core.events.queue.Message;
 import com.netflix.conductor.dao.QueueDAO;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.orkes.conductor.mq.redis.single.ConductorRedisQueue;
-import io.orkes.conductor.queue.config.RedisProperties;
+import io.orkes.conductor.queue.config.QueueRedisProperties;
 import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.jupiter.api.BeforeAll;
@@ -63,7 +63,7 @@ public class QueueDAOTest {
         jedisPool = new JedisPool(config, redis.getHost(), redis.getFirstMappedPort());
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         ConductorProperties conductorProperties = new ConductorProperties();
-        RedisProperties queueRedisProperties = new RedisProperties(conductorProperties);
+        QueueRedisProperties queueRedisProperties = new QueueRedisProperties(conductorProperties);
         redisQueue =
                 new RedisQueueDAO(
                         meterRegistry, jedisPool, queueRedisProperties, conductorProperties);

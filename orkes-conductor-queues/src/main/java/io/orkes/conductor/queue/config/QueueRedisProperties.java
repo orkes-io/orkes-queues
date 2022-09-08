@@ -23,12 +23,12 @@ import java.time.temporal.ChronoUnit;
 
 @Configuration
 @ConfigurationProperties("conductor.redis")
-public class RedisProperties {
+public class QueueRedisProperties {
 
     private final ConductorProperties conductorProperties;
 
     @Autowired
-    public RedisProperties(ConductorProperties conductorProperties) {
+    public QueueRedisProperties(ConductorProperties conductorProperties) {
         this.conductorProperties = conductorProperties;
     }
 
