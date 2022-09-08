@@ -133,7 +133,7 @@ subprojects {
                     licenses {
                         license {
                             name = 'Orkes Community License'
-                            url = 'https://github.com/orkes-io/licenses/community/LICENSE.txt'
+                            url = 'https://github.com/orkes-io/licenses/blob/main/community/LICENSE.txt'
                         }
                     }
                     developers {
