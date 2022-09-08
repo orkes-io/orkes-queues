@@ -12,15 +12,15 @@
  */
 package io.orkes.conductor.mq.redis.single;
 
-import java.io.InputStream;
-import java.util.*;
-
 import io.orkes.conductor.mq.redis.QueueMonitor;
-
 import lombok.extern.slf4j.Slf4j;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPoolAbstract;
 import redis.clients.jedis.exceptions.JedisNoScriptException;
+
+import java.io.InputStream;
+import java.util.Arrays;
+import java.util.List;
 
 @Slf4j
 public class RedisQueueMonitor extends QueueMonitor {

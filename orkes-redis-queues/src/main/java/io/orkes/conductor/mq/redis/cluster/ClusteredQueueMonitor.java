@@ -12,16 +12,15 @@
  */
 package io.orkes.conductor.mq.redis.cluster;
 
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.util.*;
-import java.util.concurrent.*;
-
 import io.orkes.conductor.mq.redis.QueueMonitor;
-
 import lombok.extern.slf4j.Slf4j;
 import redis.clients.jedis.JedisCluster;
 import redis.clients.jedis.exceptions.JedisNoScriptException;
+
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
+import java.util.List;
 
 @Slf4j
 public class ClusteredQueueMonitor extends QueueMonitor {

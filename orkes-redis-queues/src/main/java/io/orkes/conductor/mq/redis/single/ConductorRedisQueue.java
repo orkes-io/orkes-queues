@@ -12,20 +12,19 @@
  */
 package io.orkes.conductor.mq.redis.single;
 
-import java.math.BigDecimal;
-import java.time.Clock;
-import java.util.List;
-import java.util.concurrent.TimeUnit;
-
 import io.orkes.conductor.mq.ConductorQueue;
 import io.orkes.conductor.mq.QueueMessage;
 import io.orkes.conductor.mq.redis.QueueMonitor;
-
 import lombok.extern.slf4j.Slf4j;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPoolAbstract;
 import redis.clients.jedis.Pipeline;
 import redis.clients.jedis.params.ZAddParams;
+
+import java.math.BigDecimal;
+import java.time.Clock;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class ConductorRedisQueue implements ConductorQueue {

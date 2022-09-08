@@ -12,19 +12,18 @@
  */
 package io.orkes.conductor.queue.dao;
 
+import com.netflix.conductor.core.config.ConductorProperties;
+import com.netflix.conductor.core.events.queue.Message;
+import com.netflix.conductor.dao.QueueDAO;
+import io.orkes.conductor.mq.ConductorQueue;
+import io.orkes.conductor.mq.QueueMessage;
+import io.orkes.conductor.queue.config.RedisProperties;
+import lombok.extern.slf4j.Slf4j;
+
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
-
-import com.netflix.conductor.core.config.ConductorProperties;
-import com.netflix.conductor.core.events.queue.Message;
-import com.netflix.conductor.dao.QueueDAO;
-
-import io.orkes.conductor.mq.ConductorQueue;
-import io.orkes.conductor.mq.QueueMessage;
-
-import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 public abstract class BaseRedisQueueDAO implements QueueDAO {
@@ -35,8 +34,7 @@ public abstract class BaseRedisQueueDAO implements QueueDAO {
 
     private final ConcurrentHashMap<String, ConductorQueue> queues;
 
-    public BaseRedisQueueDAO(
-            QueueRedisProperties queueRedisProperties, ConductorProperties properties) {
+    public BaseRedisQueueDAO(RedisProperties queueRedisProperties, ConductorProperties properties) {
 
         // Stack is used for the backward compatibility with the DynoQueues
         this.queueNamespace =

@@ -18,6 +18,7 @@ import com.netflix.conductor.core.events.queue.Message;
 import com.netflix.conductor.dao.QueueDAO;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.orkes.conductor.mq.redis.single.ConductorRedisQueue;
+import io.orkes.conductor.queue.config.RedisProperties;
 import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.jupiter.api.BeforeAll;
@@ -62,8 +63,10 @@ public class QueueDAOTest {
         jedisPool = new JedisPool(config, redis.getHost(), redis.getFirstMappedPort());
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         ConductorProperties conductorProperties = new ConductorProperties();
-        QueueRedisProperties queueRedisProperties = new QueueRedisProperties(conductorProperties);
-        redisQueue = new RedisQueueDAO(meterRegistry, jedisPool, queueRedisProperties, conductorProperties);
+        RedisProperties queueRedisProperties = new RedisProperties(conductorProperties);
+        redisQueue =
+                new RedisQueueDAO(
+                        meterRegistry, jedisPool, queueRedisProperties, conductorProperties);
     }
 
     private String popOne() {
@@ -148,8 +151,7 @@ public class QueueDAOTest {
                     public void run() {
                         List<Message> messages = new LinkedList<>();
                         for (int i = 0; i < 10; i++) {
-                            Message msg =
-                                    new Message(UUID.randomUUID().toString(), null, null);
+                            Message msg = new Message(UUID.randomUUID().toString(), null, null);
                             msg.setPriority(new Random().nextInt(98));
                             messages.add(msg);
                         }
@@ -272,12 +274,10 @@ public class QueueDAOTest {
         int count = 10;
         List<Message> messages = new LinkedList<>();
         for (int i = 0; i < count; i++) {
-            //int priority = new Random().nextInt(20);
+            // int priority = new Random().nextInt(20);
             int priority = i + 1;
             Message msg =
-                    new Message(
-                            "x" + UUID.randomUUID().toString() + "-" + priority,
-                            null, null);
+                    new Message("x" + UUID.randomUUID().toString() + "-" + priority, null, null);
             msg.setPriority(priority);
             messages.add(msg);
         }
@@ -289,11 +289,12 @@ public class QueueDAOTest {
         assertEquals(count, popped.size());
         for (int i = 0; i < popped.size(); i++) {
             String msg = popped.get(i);
-            int priority = Integer.parseInt(msg.substring(msg.lastIndexOf("-")+1));
+            int priority = Integer.parseInt(msg.substring(msg.lastIndexOf("-") + 1));
             System.out.println(msg + "-" + priority);
-            assertEquals(i+1, priority);
+            assertEquals(i + 1, priority);
         }
     }
+
     @Test
     public void testRemove() {
         redisQueue.flush(queueName);
@@ -318,6 +319,4 @@ public class QueueDAOTest {
         assertNotNull(popped);
         assertEquals(0, popped.size());
     }
-
-
 }

@@ -34,12 +34,36 @@ Orkes Queues provides `at-least once` delivery semantics.
 
 ### Using Library
 
-#### Published Artifacts
-Server Jar is published on maven central at the following location:
-[TBD](http://orkes.io)
+#### Gradle
+
+```groovy
+// https://mvnrepository.com/artifact/io.orkes.queues/orkes-conductor-queues
+implementation 'io.orkes.queues:orkes-conductor-queues:1.0.0'
+```
+
+#### Maven
+```xml
+<!-- https://mvnrepository.com/artifact/io.orkes.queues/orkes-conductor-queues -->
+<dependency>
+    <groupId>io.orkes.queues</groupId>
+    <artifactId>orkes-conductor-queues</artifactId>
+    <version>1.0.0</version>
+</dependency>
+```
+
+### Using with Conductor
+Update Netflix/Conductor's server module and add the following dependency:
 
 ### Contributions
-We welcome community contributions and PRs to this repository.
+1. We welcome community contributions and PRs to this repository.
+    ```groovy
+    // https://mvnrepository.com/artifact/io.orkes.queues/orkes-conductor-queues
+    implementation 'io.orkes.queues:orkes-conductor-queues:1.0.0'
+    ```
+2. Set the configuration to use queues in your `conductor.properties` file:
+    ```properties
+    conductor.queue.type=redis_standalone
+    ```
 
 ### Get Support 
 Use GitHub issue tracking for filing issues and Discussion Forum for any other questions, ideas or support requests.

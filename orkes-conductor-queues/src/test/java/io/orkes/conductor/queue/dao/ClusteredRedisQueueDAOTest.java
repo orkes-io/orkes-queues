@@ -1,41 +1,45 @@
+/*
+ * Copyright 2022 Orkes, Inc.
+ * <p>
+ * Licensed under the Orkes Community License (the "License"); you may not use this file except in compliance with
+ * the License. You may obtain a copy of the License at
+ * <p>
+ * https://github.com/orkes-io/licenses/blob/main/community/LICENSE.txt
+ * <p>
+ * Unless required by applicable law or agreed to in writing, software distributed under the License is distributed on
+ * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
+ * specific language governing permissions and limitations under the License.
+ */
 package io.orkes.conductor.queue.dao;
 
-import com.github.dockerjava.api.command.CreateContainerCmd;
-import org.testcontainers.containers.FixedHostPortGenericContainer;
-import com.github.dockerjava.api.model.Bind;
-import com.github.dockerjava.api.model.ExposedPort;
-import com.github.dockerjava.api.model.PortBinding;
-import com.github.dockerjava.api.model.Ports;
 import com.google.common.util.concurrent.Uninterruptibles;
 import com.netflix.conductor.core.config.ConductorProperties;
-import com.netflix.conductor.core.events.queue.Message;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.orkes.conductor.mq.ConductorQueue;
 import io.orkes.conductor.mq.QueueMessage;
-import lombok.NonNull;
+import io.orkes.conductor.queue.config.RedisProperties;
 import org.junit.Rule;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
 import redis.clients.jedis.HostAndPort;
 import redis.clients.jedis.JedisCluster;
-import redis.clients.jedis.JedisPool;
-import redis.clients.jedis.JedisPoolConfig;
 
 import java.time.Duration;
-import java.util.*;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Consumer;
 
-import static org.junit.Assert.assertTrue;
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 class ClusteredRedisQueueDAOTest {
 
-    int[] ports = new int[]{7000, 7001, 7002, 7003, 7004, 7005};
+    int[] ports = new int[] {7000, 7001, 7002, 7003, 7004, 7005};
 
     @Rule
-    public static FixedPortContainer redis = new FixedPortContainer(DockerImageName.parse("orkesio/redis-cluster"));
+    public static FixedPortContainer redis =
+            new FixedPortContainer(DockerImageName.parse("orkesio/redis-cluster"));
 
     static {
         redis.exposePort(7000, 7000);
@@ -60,15 +64,15 @@ class ClusteredRedisQueueDAOTest {
 
         JedisCluster jedisCluster = new JedisCluster(hostAndPorts);
         ConductorProperties properties = new ConductorProperties();
-        QueueRedisProperties queueRedisProperties = new QueueRedisProperties(properties);
-        ClusteredRedisQueueDAO clusteredRedisQueue = new ClusteredRedisQueueDAO(registry, jedisCluster, queueRedisProperties, properties);
+        RedisProperties queueRedisProperties = new RedisProperties(properties);
+        ClusteredRedisQueueDAO clusteredRedisQueue =
+                new ClusteredRedisQueueDAO(
+                        registry, jedisCluster, queueRedisProperties, properties);
         ConductorQueue testQueue = clusteredRedisQueue.getConductorQueue("test_queue");
         assertNotNull(testQueue);
 
-        testQueue.push(Arrays.asList(new QueueMessage("id1",null)));
+        testQueue.push(Arrays.asList(new QueueMessage("id1", null)));
         long size = testQueue.size();
         assertEquals(1, size);
-
-
     }
 }

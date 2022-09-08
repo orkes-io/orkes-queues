@@ -12,17 +12,16 @@
  */
 package io.orkes.conductor.mq.redis.cluster;
 
+import io.orkes.conductor.mq.ConductorQueue;
+import io.orkes.conductor.mq.QueueMessage;
+import lombok.extern.slf4j.Slf4j;
+import redis.clients.jedis.JedisCluster;
+import redis.clients.jedis.params.ZAddParams;
+
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-
-import io.orkes.conductor.mq.ConductorQueue;
-import io.orkes.conductor.mq.QueueMessage;
-
-import lombok.extern.slf4j.Slf4j;
-import redis.clients.jedis.JedisCluster;
-import redis.clients.jedis.params.ZAddParams;
 
 @Slf4j
 public class ConductorRedisClusterQueue implements ConductorQueue {
