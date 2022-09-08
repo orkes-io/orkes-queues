@@ -19,7 +19,6 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
-import org.junit.Rule;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.GenericContainer;
@@ -39,12 +38,11 @@ public class ConductorRedisQueueTest {
 
     private static final String queueName = "test";
 
-    @Rule
-    public static GenericContainer redis =
+    private static GenericContainer redis =
             new GenericContainer(DockerImageName.parse("redis:6.2.6-alpine"))
                     .withExposedPorts(6379);
 
-    @Rule static ConductorRedisQueue redisQueue;
+    private static ConductorRedisQueue redisQueue;
 
     private static JedisPool jedisPool;
 

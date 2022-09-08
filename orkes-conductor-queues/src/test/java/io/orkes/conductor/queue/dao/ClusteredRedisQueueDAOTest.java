@@ -18,7 +18,6 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
-import org.junit.Rule;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.utility.DockerImageName;
 
@@ -40,8 +39,7 @@ class ClusteredRedisQueueDAOTest {
 
     int[] ports = new int[] {7000, 7001, 7002, 7003, 7004, 7005};
 
-    @Rule
-    public static FixedPortContainer redis =
+    private static FixedPortContainer redis =
             new FixedPortContainer(DockerImageName.parse("orkesio/redis-cluster"));
 
     static {
