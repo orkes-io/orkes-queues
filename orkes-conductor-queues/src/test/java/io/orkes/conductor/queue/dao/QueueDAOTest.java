@@ -12,26 +12,29 @@
  */
 package io.orkes.conductor.queue.dao;
 
-import com.google.common.util.concurrent.Uninterruptibles;
-import com.netflix.conductor.core.config.ConductorProperties;
-import com.netflix.conductor.core.events.queue.Message;
-import com.netflix.conductor.dao.QueueDAO;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
-import io.orkes.conductor.mq.redis.single.ConductorRedisQueue;
-import io.orkes.conductor.queue.config.QueueRedisProperties;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
+
 import org.junit.Assert;
 import org.junit.Rule;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
+
+import com.netflix.conductor.core.config.ConductorProperties;
+import com.netflix.conductor.core.events.queue.Message;
+import com.netflix.conductor.dao.QueueDAO;
+
+import io.orkes.conductor.mq.redis.single.ConductorRedisQueue;
+import io.orkes.conductor.queue.config.QueueRedisProperties;
+
+import com.google.common.util.concurrent.Uninterruptibles;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import redis.clients.jedis.JedisPool;
 import redis.clients.jedis.JedisPoolConfig;
-
-import java.util.*;
-import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.stream.Collectors;
 
 import static org.junit.Assert.*;
 import static org.junit.jupiter.api.Assertions.assertNotNull;

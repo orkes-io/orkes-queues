@@ -12,17 +12,6 @@
  */
 package io.orkes.conductor.mq;
 
-import com.google.common.util.concurrent.Uninterruptibles;
-import io.orkes.conductor.mq.redis.single.ConductorRedisQueue;
-import org.junit.Assert;
-import org.junit.Rule;
-import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Test;
-import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.utility.DockerImageName;
-import redis.clients.jedis.JedisPool;
-import redis.clients.jedis.JedisPoolConfig;
-
 import java.time.Clock;
 import java.time.Duration;
 import java.util.*;
@@ -30,8 +19,19 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
-import static org.junit.Assert.*;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import org.junit.Rule;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.utility.DockerImageName;
+
+import io.orkes.conductor.mq.redis.single.ConductorRedisQueue;
+
+import com.google.common.util.concurrent.Uninterruptibles;
+import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.JedisPoolConfig;
+
+import static org.junit.jupiter.api.Assertions.*;
 
 public class ConductorRedisQueueTest {
 
@@ -110,7 +110,7 @@ public class ConductorRedisQueueTest {
         Uninterruptibles.sleepUninterruptibly(200, TimeUnit.MILLISECONDS);
 
         popped = popOne();
-        Assert.assertNotNull(popped);
+        assertNotNull(popped);
         assertEquals(id, popped.getId());
 
         boolean updated = redisQueue.setUnacktimeout(id, 500);
@@ -120,7 +120,7 @@ public class ConductorRedisQueueTest {
 
         Uninterruptibles.sleepUninterruptibly(1000, TimeUnit.MILLISECONDS);
         popped = popOne();
-        Assert.assertNotNull(popped);
+        assertNotNull(popped);
 
         redisQueue.ack(id);
         popped = popOne();

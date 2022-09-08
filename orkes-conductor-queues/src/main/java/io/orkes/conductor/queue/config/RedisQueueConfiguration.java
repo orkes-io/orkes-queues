@@ -12,23 +12,26 @@
  */
 package io.orkes.conductor.queue.config;
 
-import com.netflix.conductor.core.config.ConductorProperties;
-import com.netflix.conductor.dao.QueueDAO;
-import io.micrometer.core.instrument.MeterRegistry;
-import io.orkes.conductor.queue.dao.ClusteredRedisQueueDAO;
-import io.orkes.conductor.queue.dao.RedisQueueDAO;
-import lombok.extern.slf4j.Slf4j;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+
 import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Primary;
-import redis.clients.jedis.*;
 
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
+import com.netflix.conductor.core.config.ConductorProperties;
+import com.netflix.conductor.dao.QueueDAO;
+
+import io.orkes.conductor.queue.dao.ClusteredRedisQueueDAO;
+import io.orkes.conductor.queue.dao.RedisQueueDAO;
+
+import io.micrometer.core.instrument.MeterRegistry;
+import lombok.extern.slf4j.Slf4j;
+import redis.clients.jedis.*;
 
 @Configuration
 @Slf4j
@@ -78,7 +81,9 @@ public class RedisQueueConfiguration {
         JedisPoolConfig config = new JedisPoolConfig();
         config.setMinIdle(2);
         config.setMaxTotal(redisProperties.getMaxConnectionsPerHost());
-        log.info("Starting conductor server using redis_standalone - use SSL? {}", redisProperties.isSsl());
+        log.info(
+                "Starting conductor server using redis_standalone - use SSL? {}",
+                redisProperties.isSsl());
         Host host = hostSupplier.getHosts().get(0);
 
         if (host.getPassword() != null) {
@@ -92,7 +97,8 @@ public class RedisQueueConfiguration {
                     redisProperties.getDatabase(),
                     redisProperties.isSsl());
         } else {
-            return new JedisPool(config,
+            return new JedisPool(
+                    config,
                     host.getHostName(),
                     host.getPort(),
                     Protocol.DEFAULT_TIMEOUT,
@@ -142,8 +148,12 @@ public class RedisQueueConfiguration {
                     null);
         } else {
             return new JedisSentinelPool(
-                    properties.getClusterName(), sentinels, genericObjectPoolConfig,
-                    Protocol.DEFAULT_TIMEOUT, null, properties.getDatabase());
+                    properties.getClusterName(),
+                    sentinels,
+                    genericObjectPoolConfig,
+                    Protocol.DEFAULT_TIMEOUT,
+                    null,
+                    properties.getDatabase());
         }
     }
 

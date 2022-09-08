@@ -12,9 +12,10 @@
  */
 package io.orkes.conductor.queue.dao;
 
-import lombok.NonNull;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
+
+import lombok.NonNull;
 
 public class FixedPortContainer extends GenericContainer {
 

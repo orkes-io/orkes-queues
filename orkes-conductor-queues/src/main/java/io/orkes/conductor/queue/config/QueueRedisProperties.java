@@ -12,14 +12,15 @@
  */
 package io.orkes.conductor.queue.config;
 
-import com.netflix.conductor.core.config.ConductorProperties;
+import java.time.Duration;
+import java.time.temporal.ChronoUnit;
+
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.convert.DurationUnit;
 import org.springframework.context.annotation.Configuration;
 
-import java.time.Duration;
-import java.time.temporal.ChronoUnit;
+import com.netflix.conductor.core.config.ConductorProperties;
 
 @Configuration
 @ConfigurationProperties("conductor.redis")

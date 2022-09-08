@@ -12,10 +12,10 @@
  */
 package io.orkes.conductor.queue.config;
 
-import org.apache.commons.lang3.StringUtils;
-
 import java.net.InetSocketAddress;
 import java.util.Objects;
+
+import org.apache.commons.lang3.StringUtils;
 
 public class Host implements Comparable<Host> {
 
