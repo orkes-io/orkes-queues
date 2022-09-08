@@ -122,8 +122,8 @@ subprojects {
             mavenJava(MavenPublication) {
                 from components.java
                 pom {
-                    name = 'Orkes Conductor Community'
-                    description = 'Orkes supported version of open source Netflix Conductor'
+                    name = 'Orkes Queues'
+                    description = 'High Performance Distributed Queues'
                     url = 'https://github.com/orkes-io/orkes-queues'
                     scm {
                         connection = 'scm:git://github.com/orkes-io/orkes-queues.git'
