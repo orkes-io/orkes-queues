@@ -84,6 +84,9 @@ public class QueueRedisProperties {
     /** The read connection port to be used for connecting to dyno-queues */
     private int queuesNonQuorumPort = 22122;
 
+    /** The sharding strategy to be used for the dyno queue configuration */
+    private String queueShardingStrategy = "roundRobin";
+
     /** The time in seconds after which the in-memory task definitions cache will be refreshed */
     @DurationUnit(ChronoUnit.SECONDS)
     private Duration taskDefCacheRefreshInterval = Duration.ofSeconds(60);
