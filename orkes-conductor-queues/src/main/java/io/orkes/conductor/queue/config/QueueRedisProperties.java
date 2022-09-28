@@ -15,10 +15,8 @@ package io.orkes.conductor.queue.config;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.convert.DurationUnit;
-import org.springframework.context.annotation.Configuration;
 
 import com.netflix.conductor.core.config.ConductorProperties;
 
@@ -27,7 +25,6 @@ public class QueueRedisProperties {
 
     private final ConductorProperties conductorProperties;
 
-    @Autowired
     public QueueRedisProperties(ConductorProperties conductorProperties) {
         this.conductorProperties = conductorProperties;
     }
