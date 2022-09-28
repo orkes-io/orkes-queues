@@ -22,7 +22,6 @@ import org.springframework.context.annotation.Configuration;
 
 import com.netflix.conductor.core.config.ConductorProperties;
 
-@Configuration
 @ConfigurationProperties("conductor.redis")
 public class QueueRedisProperties {
 
