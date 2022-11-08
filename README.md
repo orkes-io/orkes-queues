@@ -62,6 +62,10 @@ implementation 'io.orkes.queues:orkes-conductor-queues:VERSION'
  ```properties
     conductor.queue.type=redis_standalone
 ```
+3. Add following line to [Conductor.java](https://github.com/Netflix/conductor/blob/main/server/src/main/java/com/netflix/conductor/Conductor.java#L29)
+```java
+@ComponentScan(basePackages = {"com.netflix.conductor", "io.orkes.conductor"})
+```
 
 ### Contributions
 We welcome community contributions and PRs to this repository.
