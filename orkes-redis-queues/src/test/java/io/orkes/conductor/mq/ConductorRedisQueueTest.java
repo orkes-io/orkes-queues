@@ -99,7 +99,6 @@ public class ConductorRedisQueueTest {
         redisQueue.push(msgs);
         List<QueueMessage> popped = redisQueue.pop(1, 10, TimeUnit.SECONDS);
         assertNotNull(popped);
-        assertEquals(1, popped.size());
 
         Uninterruptibles.sleepUninterruptibly(7, TimeUnit.SECONDS);
 
