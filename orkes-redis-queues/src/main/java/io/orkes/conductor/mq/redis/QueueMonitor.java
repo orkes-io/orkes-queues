@@ -31,7 +31,7 @@ public abstract class QueueMonitor {
 
     private final Clock clock;
 
-    private final LinkedBlockingDeque<QueueMessage> peekedMessages;
+    private final LinkedBlockingQueue<QueueMessage> peekedMessages;
 
     private final ExecutorService executorService;
 
@@ -40,8 +40,6 @@ public abstract class QueueMonitor {
 
     private int queueUnackTime = 30_000;
 
-    private long nextUpdate = 0;
-
     private long size = 0;
 
     private int maxPollCount = 100;
@@ -49,7 +47,7 @@ public abstract class QueueMonitor {
     public QueueMonitor(String queueName) {
         this.queueName = queueName;
         this.clock = Clock.systemDefaultZone();
-        this.peekedMessages = new LinkedBlockingDeque<>();
+        this.peekedMessages = new LinkedBlockingQueue<>();
         this.executorService =
                 new ThreadPoolExecutor(
                         1, 1, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(maxPollCount));
@@ -86,7 +84,9 @@ public abstract class QueueMonitor {
                     }
                 }
                 if (now > message.getExpiry()) {
-                    continue;
+                    peekedMessages.clear();
+                    pollCount.addAndGet(count);
+                    return new ArrayList<>();
                 }
                 messages.add(message);
             } catch (Exception e) {
@@ -121,10 +121,6 @@ public abstract class QueueMonitor {
                 // anything!
                 return;
             }
-            if (getQueuedMessagesLen() == 0) {
-                pollCount.set(0); // There isn't anything in the queue
-                return;
-            }
 
             log.trace("Polling {} messages from {} with size {}", count, queueName, size);
 
@@ -154,14 +150,5 @@ public abstract class QueueMonitor {
         } catch (Throwable t) {
             log.warn(t.getMessage(), t);
         }
-    }
-
-    private long getQueuedMessagesLen() {
-        long now = clock.millis();
-        if (now > nextUpdate) {
-            size = queueSize();
-            nextUpdate = now + 1000; // Cache for 1000 ms
-        }
-        return size;
     }
 }
