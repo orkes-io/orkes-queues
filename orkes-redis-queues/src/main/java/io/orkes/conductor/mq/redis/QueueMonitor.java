@@ -31,7 +31,7 @@ public abstract class QueueMonitor {
 
     private final Clock clock;
 
-    private final LinkedBlockingDeque<QueueMessage> peekedMessages;
+    private final LinkedBlockingQueue<QueueMessage> peekedMessages;
 
     private final ExecutorService executorService;
 
@@ -47,7 +47,7 @@ public abstract class QueueMonitor {
     public QueueMonitor(String queueName) {
         this.queueName = queueName;
         this.clock = Clock.systemDefaultZone();
-        this.peekedMessages = new LinkedBlockingDeque<>();
+        this.peekedMessages = new LinkedBlockingQueue<>();
         this.executorService =
                 new ThreadPoolExecutor(
                         1, 1, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(maxPollCount));
