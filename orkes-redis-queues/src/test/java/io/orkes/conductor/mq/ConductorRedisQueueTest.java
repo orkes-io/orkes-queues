@@ -84,27 +84,27 @@ public class ConductorRedisQueueTest {
 
     @Test
     public void testExpiredMessage() {
-        redisQueue.flush();
-        redisQueue.setQueueUnackTime(5);
+        ConductorRedisQueue redisQueue3 = new ConductorRedisQueue(queueName + "Xxxx", jedisPool);
+        redisQueue3.setQueueUnackTime(5);
         List<QueueMessage> msgs = new ArrayList<>();
         for (int i = 0; i < 100; i++) {
             QueueMessage msg = new QueueMessage(UUID.randomUUID().toString(), "", 0, 0);
             msgs.add(msg);
         }
         for (int i = 0; i < 1000; i++) {
-            List<QueueMessage> popped = redisQueue.pop(1, 2, TimeUnit.MILLISECONDS);
+            List<QueueMessage> popped = redisQueue3.pop(1, 2, TimeUnit.MILLISECONDS);
             assertNotNull(popped);
             assertEquals(0, popped.size());
         }
-        redisQueue.push(msgs);
-        List<QueueMessage> popped = redisQueue.pop(1, 10, TimeUnit.SECONDS);
+        redisQueue3.push(msgs);
+        List<QueueMessage> popped = redisQueue3.pop(1, 10, TimeUnit.SECONDS);
         assertNotNull(popped);
 
         Uninterruptibles.sleepUninterruptibly(7, TimeUnit.SECONDS);
 
         int found = 0;
         for (int i = 0; i < 1000; i++) {
-            popped = redisQueue.pop(1, 10, TimeUnit.MILLISECONDS);
+            popped = redisQueue3.pop(1, 10, TimeUnit.MILLISECONDS);
             assertNotNull(popped);
             found += popped.size();
             if(found > 99) {
