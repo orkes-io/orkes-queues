@@ -146,7 +146,10 @@ public abstract class QueueMonitor {
                 message.setExpiry(messageExpiry);
                 peekedMessages.add(message);
             }
-            pollCount.addAndGet(-1 * (response.size() / 2));
+            pollCount.addAndGet(-1 * response.size());
+            if (pollCount.get() < 0) {
+                pollCount.set(0);
+            }
         } catch (Throwable t) {
             log.warn(t.getMessage(), t);
         }

@@ -300,6 +300,25 @@ public class ConductorRedisQueueTest {
         redisQueue.flush();
         assertEquals(0, redisQueue.size());
     }
+    @Test
+    public void testPollCountOrdering() {
+        ConductorRedisQueue redisQueue = new ConductorRedisQueue("test",jedisPool);
+
+        redisQueue.push(Arrays.asList(new QueueMessage(String.valueOf(1), "1", 0,1)));
+        redisQueue.push(Arrays.asList(new QueueMessage(String.valueOf(2), "2", 0,1)));
+
+        List<QueueMessage> msg = redisQueue.pop(1, 100, TimeUnit.MILLISECONDS);
+        List<QueueMessage> msg1 = redisQueue.pop(1, 100, TimeUnit.MILLISECONDS);
+        List<QueueMessage> msg2 = redisQueue.pop(1, 100, TimeUnit.MILLISECONDS);
+
+        redisQueue.push(Arrays.asList(new QueueMessage(String.valueOf(3), "3", 0,1)));
+        redisQueue.push(Arrays.asList(new QueueMessage(String.valueOf(4), "4", 0,1)));
+        List<QueueMessage> msg3 = redisQueue.pop(1, 100, TimeUnit.MILLISECONDS);
+        assertEquals(msg.size(), 1);
+        assertEquals(msg1.size(), 1);
+        assertEquals(msg2.size(), 0);
+        assertEquals(msg3.size(), 1);
+    }
 
     @Test
     public void testPriority() {
