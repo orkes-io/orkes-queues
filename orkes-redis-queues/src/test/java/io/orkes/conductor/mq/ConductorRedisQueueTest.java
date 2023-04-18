@@ -12,7 +12,6 @@
  */
 package io.orkes.conductor.mq;
 
-import java.sql.Time;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.*;
@@ -307,17 +306,21 @@ public class ConductorRedisQueueTest {
         redisQueue.push(Arrays.asList(new QueueMessage(String.valueOf(1), "1", 0,1)));
         redisQueue.push(Arrays.asList(new QueueMessage(String.valueOf(2), "2", 0,1)));
 
-        List<QueueMessage> msg = redisQueue.pop(1, 100, TimeUnit.MILLISECONDS);
-        List<QueueMessage> msg1 = redisQueue.pop(1, 100, TimeUnit.MILLISECONDS);
-        List<QueueMessage> msg2 = redisQueue.pop(1, 100, TimeUnit.MILLISECONDS);
+        redisQueue.pop(1, 100, TimeUnit.MILLISECONDS);
+        redisQueue.pop(1, 100, TimeUnit.MILLISECONDS);
+        //Pop 10 times
+        for(int i=0;i<10;i++) {
+            redisQueue.pop(1, 100, TimeUnit.MILLISECONDS);
+        }
+        // Pollcount should not change
+        assertEquals(1, redisQueue.getPollCount());
 
         redisQueue.push(Arrays.asList(new QueueMessage(String.valueOf(3), "3", 0,1)));
         redisQueue.push(Arrays.asList(new QueueMessage(String.valueOf(4), "4", 0,1)));
-        List<QueueMessage> msg3 = redisQueue.pop(1, 100, TimeUnit.MILLISECONDS);
-        assertEquals(msg.size(), 1);
-        assertEquals(msg1.size(), 1);
-        assertEquals(msg2.size(), 0);
-        assertEquals(msg3.size(), 1);
+        assertEquals(1, redisQueue.getPollCount());
+
+        redisQueue.pop(2, 100, TimeUnit.MILLISECONDS);
+        assertEquals(0, redisQueue.getPollCount());
     }
 
     @Test

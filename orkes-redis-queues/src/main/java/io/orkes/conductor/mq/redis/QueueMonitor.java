@@ -151,4 +151,8 @@ public abstract class QueueMonitor {
             log.warn(t.getMessage(), t);
         }
     }
+
+    public int getPollCount() {
+        return pollCount.get();
+    }
 }
