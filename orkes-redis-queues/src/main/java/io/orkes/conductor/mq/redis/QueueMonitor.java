@@ -56,7 +56,7 @@ public abstract class QueueMonitor {
     public List<QueueMessage> pop(int count, int waitTime, TimeUnit timeUnit) {
 
         List<QueueMessage> messages = new ArrayList<>();
-        int pendingCount = pollCount.addAndGet(count);
+        int pendingCount = pollCount.getAndSet(Math.max(pollCount.get(), count));
         if (peekedMessages.isEmpty()) {
             __peekedMessages();
         } else if (peekedMessages.size() < pendingCount) {
@@ -150,5 +150,9 @@ public abstract class QueueMonitor {
         } catch (Throwable t) {
             log.warn(t.getMessage(), t);
         }
+    }
+
+    public int getPollCount() {
+        return pollCount.get();
     }
 }
