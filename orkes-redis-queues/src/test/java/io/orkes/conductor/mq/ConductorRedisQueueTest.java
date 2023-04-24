@@ -328,6 +328,27 @@ public class ConductorRedisQueueTest {
     }
 
     @Test
+    public void testStrictPriority() {
+        redisQueue.flush();
+
+        redisQueue.pop(100,0,TimeUnit.MILLISECONDS);
+
+        for(int i = 1; i <= 100; i++)
+        {
+            redisQueue.push(Arrays.asList(new QueueMessage(String.valueOf(i),"", 0, i)));
+        }
+
+        List<QueueMessage> messages = redisQueue.pop(1,0,TimeUnit.MILLISECONDS); // 1 item popped, 99 items priority messed up priority in Redis
+        assertEquals(1, messages.size());
+        assertEquals("1", messages.get(0).getId());
+
+        // push message with highest priority, and it should get poped first
+        redisQueue.push(Arrays.asList(new QueueMessage(String.valueOf(1),"", 0, 1)));
+        assertEquals(1, messages.size());
+        assertEquals("1", messages.get(0).getId());
+    }
+
+    @Test
     public void testDelayedPriority() {
 
         redisQueue.flush();
