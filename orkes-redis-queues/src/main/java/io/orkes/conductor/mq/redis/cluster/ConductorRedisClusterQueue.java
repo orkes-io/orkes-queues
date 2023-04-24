@@ -170,11 +170,6 @@ public class ConductorRedisClusterQueue implements ConductorQueue {
         return null;
     }
 
-    @Override
-    public int getPollCount() {
-        return queueMonitor.getPollCount();
-    }
-
     private List<String> getPayloads(String[] messageIds) {
         List<String> payloads = jedis.hmget(payloadKey, messageIds);
         return payloads;

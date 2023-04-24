@@ -51,8 +51,6 @@ public interface ConductorQueue {
 
     String getShardName();
 
-    int getPollCount();
-
     default double getScore(long now, QueueMessage msg) {
         double score = 0;
         if (msg.getTimeout() > 0) {
