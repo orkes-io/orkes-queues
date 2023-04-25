@@ -183,11 +183,6 @@ public class ConductorRedisQueue implements ConductorQueue {
         return null;
     }
 
-    @Override
-    public int getPollCount() {
-        return queueMonitor.getPollCount();
-    }
-
     private List<String> getPayloads(String[] messageIds) {
         try (Jedis jedis = jedisPool.getResource()) {
             List<String> payloads = jedis.hmget(payloadKey, messageIds);

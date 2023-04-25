@@ -35,7 +35,6 @@ public abstract class QueueMonitor {
 
     private final ExecutorService executorService;
 
-    private final AtomicInteger pollCount = new AtomicInteger(0);
     private final String queueName;
 
     private int queueUnackTime = 30_000;
@@ -54,17 +53,17 @@ public abstract class QueueMonitor {
     }
 
     public List<QueueMessage> pop(int count, int waitTime, TimeUnit timeUnit) {
-
-        List<QueueMessage> messages = new ArrayList<>();
-        int pendingCount = pollCount.getAndSet(Math.max(pollCount.get(), count));
-        if (peekedMessages.isEmpty()) {
-            __peekedMessages();
-        } else if (peekedMessages.size() < pendingCount) {
-            try {
-                executorService.submit(() -> __peekedMessages());
-            } catch (RejectedExecutionException rejectedExecutionException) {
-            }
+        if (count <= 0) {
+            log.warn("Negative poll count {}");
+            // Negative number shouldn't happen, but it can be zero and in that case we don't do
+            // anything!
+            return new ArrayList<>();
         }
+        List<QueueMessage> messages = new ArrayList<>();
+        if (count > maxPollCount) {
+            count = maxPollCount;
+        }
+        __peekedMessages(count);
 
         long now = clock.millis();
         boolean waited = false;
@@ -85,7 +84,6 @@ public abstract class QueueMonitor {
                 }
                 if (now > message.getExpiry()) {
                     peekedMessages.clear();
-                    pollCount.addAndGet(count);
                     return new ArrayList<>();
                 }
                 messages.add(message);
@@ -108,19 +106,8 @@ public abstract class QueueMonitor {
 
     protected abstract long queueSize();
 
-    private synchronized void __peekedMessages() {
+    private synchronized void __peekedMessages(int count) {
         try {
-
-            int count = Math.min(maxPollCount, pollCount.get());
-            if (count <= 0) {
-                if (count < 0) {
-                    log.warn("Negative poll count {}", pollCount.get());
-                    pollCount.set(0);
-                }
-                // Negative number shouldn't happen, but it can be zero and in that case we don't do
-                // anything!
-                return;
-            }
 
             log.trace("Polling {} messages from {} with size {}", count, queueName, size);
 
@@ -146,13 +133,8 @@ public abstract class QueueMonitor {
                 message.setExpiry(messageExpiry);
                 peekedMessages.add(message);
             }
-            pollCount.addAndGet(-1 * (response.size() / 2));
         } catch (Throwable t) {
             log.warn(t.getMessage(), t);
         }
-    }
-
-    public int getPollCount() {
-        return pollCount.get();
     }
 }

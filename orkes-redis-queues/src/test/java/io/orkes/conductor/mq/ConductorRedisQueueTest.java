@@ -299,29 +299,6 @@ public class ConductorRedisQueueTest {
         redisQueue.flush();
         assertEquals(0, redisQueue.size());
     }
-    @Test
-    public void testPollCountOrdering() {
-        ConductorRedisQueue redisQueue = new ConductorRedisQueue("test",jedisPool);
-
-        redisQueue.push(Arrays.asList(new QueueMessage(String.valueOf(1), "1", 0,1)));
-        redisQueue.push(Arrays.asList(new QueueMessage(String.valueOf(2), "2", 0,1)));
-
-        redisQueue.pop(1, 100, TimeUnit.MILLISECONDS);
-        redisQueue.pop(1, 100, TimeUnit.MILLISECONDS);
-        //Pop 10 times
-        for(int i=0;i<10;i++) {
-            redisQueue.pop(1, 100, TimeUnit.MILLISECONDS);
-        }
-        // Pollcount should not change
-        assertEquals(1, redisQueue.getPollCount());
-
-        redisQueue.push(Arrays.asList(new QueueMessage(String.valueOf(3), "3", 0,1)));
-        redisQueue.push(Arrays.asList(new QueueMessage(String.valueOf(4), "4", 0,1)));
-        assertEquals(1, redisQueue.getPollCount());
-
-        redisQueue.pop(2, 100, TimeUnit.MILLISECONDS);
-        assertEquals(0, redisQueue.getPollCount());
-    }
 
     @Test
     public void testPriority() {
@@ -348,6 +325,27 @@ public class ConductorRedisQueueTest {
             // assertEquals(msg.getPriority(), i);
             System.out.println(msg.getId());
         }
+    }
+
+    @Test
+    public void testStrictPriority() {
+        redisQueue.flush();
+
+        redisQueue.pop(100,0,TimeUnit.MILLISECONDS);
+
+        for(int i = 1; i <= 100; i++)
+        {
+            redisQueue.push(Arrays.asList(new QueueMessage(String.valueOf(i),"", 0, i)));
+        }
+
+        List<QueueMessage> messages = redisQueue.pop(1,0,TimeUnit.MILLISECONDS); // 1 item popped, 99 items priority messed up priority in Redis
+        assertEquals(1, messages.size());
+        assertEquals("1", messages.get(0).getId());
+
+        // push message with highest priority, and it should get poped first
+        redisQueue.push(Arrays.asList(new QueueMessage(String.valueOf(1),"", 0, 1)));
+        assertEquals(1, messages.size());
+        assertEquals("1", messages.get(0).getId());
     }
 
     @Test
