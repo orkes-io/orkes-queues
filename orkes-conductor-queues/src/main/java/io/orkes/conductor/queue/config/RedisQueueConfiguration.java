@@ -52,7 +52,7 @@ public class RedisQueueConfiguration {
         log.info("getQueueDAOStandalone init");
         return new RedisQueueDAO(registry, jedisPool, queueRedisProperties, properties);
     }
-
+ 
     @Bean
     @Primary
     @ConditionalOnProperty(name = "conductor.queue.type", havingValue = "redis_sentinel")
