@@ -291,32 +291,4 @@ public class QueueRedisProperties {
         this.ssl = ssl;
     }
 
-    @Override
-    public String toString() {
-        return "QueueRedisProperties{" +
-                "conductorProperties=" + conductorProperties +
-                ", dataCenterRegion='" + dataCenterRegion + '\'' +
-                ", availabilityZone='" + availabilityZone + '\'' +
-                ", clusterName='" + clusterName + '\'' +
-                ", hosts='" + hosts + '\'' +
-                ", workflowNamespacePrefix='" + workflowNamespacePrefix + '\'' +
-                ", queueNamespacePrefix='" + queueNamespacePrefix + '\'' +
-                ", keyspaceDomain='" + keyspaceDomain + '\'' +
-                ", maxConnectionsPerHost=" + maxConnectionsPerHost +
-                ", database=" + database +
-                ", maxTimeoutWhenExhausted=" + maxTimeoutWhenExhausted +
-                ", maxRetryAttempts=" + maxRetryAttempts +
-                ", queuesNonQuorumPort=" + queuesNonQuorumPort +
-                ", taskDefCacheRefreshInterval=" + taskDefCacheRefreshInterval +
-                ", eventExecutionPersistenceTTL=" + eventExecutionPersistenceTTL +
-                ", metadataCacheRefreshInterval=" + metadataCacheRefreshInterval +
-                ", maxIdleConnections=" + maxIdleConnections +
-                ", minIdleConnections=" + minIdleConnections +
-                ", minEvictableIdleTimeMillis=" + minEvictableIdleTimeMillis +
-                ", timeBetweenEvictionRunsMillis=" + timeBetweenEvictionRunsMillis +
-                ", testWhileIdle=" + testWhileIdle +
-                ", numTestsPerEvictionRun=" + numTestsPerEvictionRun +
-                ", ssl=" + ssl +
-                '}';
-    }
 }

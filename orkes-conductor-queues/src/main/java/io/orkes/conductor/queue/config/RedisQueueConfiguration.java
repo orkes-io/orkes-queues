@@ -19,11 +19,9 @@ import io.orkes.conductor.queue.dao.ClusteredRedisQueueDAO;
 import io.orkes.conductor.queue.dao.RedisQueueDAO;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
@@ -37,7 +35,6 @@ import java.util.stream.Collectors;
 @EnableAutoConfiguration
 @AutoConfiguration
 @Slf4j
-//@EnableConfigurationProperties(QueueRedisProperties.class)
 @Import({io.orkes.conductor.queue.config.QueueRedisProperties.class})
 public class RedisQueueConfiguration {
 
