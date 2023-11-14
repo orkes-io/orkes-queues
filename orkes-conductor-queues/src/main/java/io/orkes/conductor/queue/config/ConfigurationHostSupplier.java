@@ -34,11 +34,12 @@ public class ConfigurationHostSupplier {
     }
 
     private List<Host> parseHostsFromConfig() {
+        System.out.println("\n\n\n\n\n\n\n\n parseHostsFromConfig" + properties.toString());
         String hosts = properties.getHosts();
         if (hosts == null) {
             // FIXME This type of validation probably doesn't belong here.
             String message =
-                    "Missing dynomite/redis hosts. Ensure 'workflow.dynomite.cluster.hosts' has been set in the supplied configuration.";
+                    "Orkes 7 - Missing dynomite/redis hosts. Ensure 'workflow.dynomite.cluster.hosts' has been set in the supplied configuration.";
             log.error(message);
             throw new RuntimeException(message);
         }

@@ -19,7 +19,6 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.convert.DurationUnit;
 
 import com.netflix.conductor.core.config.ConductorProperties;
-
 @ConfigurationProperties("conductor.redis")
 public class QueueRedisProperties {
 
@@ -290,5 +289,34 @@ public class QueueRedisProperties {
 
     public void setSsl(boolean ssl) {
         this.ssl = ssl;
+    }
+
+    @Override
+    public String toString() {
+        return "QueueRedisProperties{" +
+                "conductorProperties=" + conductorProperties +
+                ", dataCenterRegion='" + dataCenterRegion + '\'' +
+                ", availabilityZone='" + availabilityZone + '\'' +
+                ", clusterName='" + clusterName + '\'' +
+                ", hosts='" + hosts + '\'' +
+                ", workflowNamespacePrefix='" + workflowNamespacePrefix + '\'' +
+                ", queueNamespacePrefix='" + queueNamespacePrefix + '\'' +
+                ", keyspaceDomain='" + keyspaceDomain + '\'' +
+                ", maxConnectionsPerHost=" + maxConnectionsPerHost +
+                ", database=" + database +
+                ", maxTimeoutWhenExhausted=" + maxTimeoutWhenExhausted +
+                ", maxRetryAttempts=" + maxRetryAttempts +
+                ", queuesNonQuorumPort=" + queuesNonQuorumPort +
+                ", taskDefCacheRefreshInterval=" + taskDefCacheRefreshInterval +
+                ", eventExecutionPersistenceTTL=" + eventExecutionPersistenceTTL +
+                ", metadataCacheRefreshInterval=" + metadataCacheRefreshInterval +
+                ", maxIdleConnections=" + maxIdleConnections +
+                ", minIdleConnections=" + minIdleConnections +
+                ", minEvictableIdleTimeMillis=" + minEvictableIdleTimeMillis +
+                ", timeBetweenEvictionRunsMillis=" + timeBetweenEvictionRunsMillis +
+                ", testWhileIdle=" + testWhileIdle +
+                ", numTestsPerEvictionRun=" + numTestsPerEvictionRun +
+                ", ssl=" + ssl +
+                '}';
     }
 }

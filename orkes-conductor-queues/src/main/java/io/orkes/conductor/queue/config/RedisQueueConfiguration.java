@@ -12,31 +12,33 @@
  */
 package io.orkes.conductor.queue.config;
 
+import com.netflix.conductor.core.config.ConductorProperties;
+import com.netflix.conductor.dao.QueueDAO;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.orkes.conductor.queue.dao.ClusteredRedisQueueDAO;
+import io.orkes.conductor.queue.dao.RedisQueueDAO;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
+import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
+import redis.clients.jedis.*;
+
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Primary;
-
-import com.netflix.conductor.core.config.ConductorProperties;
-import com.netflix.conductor.dao.QueueDAO;
-
-import io.orkes.conductor.queue.dao.ClusteredRedisQueueDAO;
-import io.orkes.conductor.queue.dao.RedisQueueDAO;
-
-import io.micrometer.core.instrument.MeterRegistry;
-import lombok.extern.slf4j.Slf4j;
-import redis.clients.jedis.*;
-
-@EnableConfigurationProperties(QueueRedisProperties.class)
-@Configuration
+@EnableAutoConfiguration
+@AutoConfiguration
 @Slf4j
+//@EnableConfigurationProperties(QueueRedisProperties.class)
+@Import({io.orkes.conductor.queue.config.QueueRedisProperties.class})
 public class RedisQueueConfiguration {
 
     protected static final int DEFAULT_MAX_ATTEMPTS = 5;
@@ -44,6 +46,7 @@ public class RedisQueueConfiguration {
     @Bean
     @Primary
     @ConditionalOnProperty(name = "conductor.queue.type", havingValue = "redis_standalone")
+    @Autowired
     public QueueDAO getQueueDAOStandalone(
             JedisPool jedisPool,
             MeterRegistry registry,
@@ -56,6 +59,7 @@ public class RedisQueueConfiguration {
     @Bean
     @Primary
     @ConditionalOnProperty(name = "conductor.queue.type", havingValue = "redis_sentinel")
+    @Autowired
     public QueueDAO getQueueDAOSentinel(
             JedisSentinelPool jedisSentinelPool,
             MeterRegistry registry,
@@ -67,6 +71,7 @@ public class RedisQueueConfiguration {
     @Bean
     @Primary
     @ConditionalOnProperty(name = "conductor.queue.type", havingValue = "redis_cluster")
+    @Autowired
     public QueueDAO getQueueDAOCluster(
             JedisCluster jedisCluster,
             MeterRegistry registry,
@@ -78,6 +83,7 @@ public class RedisQueueConfiguration {
     @Bean
     @Primary
     @ConditionalOnProperty(name = "conductor.queue.type", havingValue = "redis_standalone")
+    @Autowired
     protected JedisPool getJedisPoolStandalone(QueueRedisProperties redisProperties) {
         ConfigurationHostSupplier hostSupplier = new ConfigurationHostSupplier(redisProperties);
         JedisPoolConfig config = new JedisPoolConfig();
@@ -113,6 +119,7 @@ public class RedisQueueConfiguration {
     @Bean
     @Primary
     @ConditionalOnProperty(name = "conductor.queue.type", havingValue = "redis_sentinel")
+    @Autowired
     public JedisSentinelPool getJedisPoolSentinel(QueueRedisProperties properties) {
         ConfigurationHostSupplier hostSupplier = new ConfigurationHostSupplier(properties);
         GenericObjectPoolConfig<?> genericObjectPoolConfig = new GenericObjectPoolConfig<>();
@@ -162,6 +169,7 @@ public class RedisQueueConfiguration {
     @Bean
     @Primary
     @ConditionalOnProperty(name = "conductor.queue.type", havingValue = "redis_cluster")
+    @Autowired
     public JedisCluster createJedisCommands(QueueRedisProperties properties) {
         ConfigurationHostSupplier hostSupplier = new ConfigurationHostSupplier(properties);
 
