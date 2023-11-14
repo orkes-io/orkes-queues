@@ -46,7 +46,6 @@ public class RedisQueueConfiguration {
     @Bean
     @Primary
     @ConditionalOnProperty(name = "conductor.queue.type", havingValue = "redis_standalone")
-    @Autowired
     public QueueDAO getQueueDAOStandalone(
             JedisPool jedisPool,
             MeterRegistry registry,
@@ -59,7 +58,6 @@ public class RedisQueueConfiguration {
     @Bean
     @Primary
     @ConditionalOnProperty(name = "conductor.queue.type", havingValue = "redis_sentinel")
-    @Autowired
     public QueueDAO getQueueDAOSentinel(
             JedisSentinelPool jedisSentinelPool,
             MeterRegistry registry,
@@ -71,7 +69,6 @@ public class RedisQueueConfiguration {
     @Bean
     @Primary
     @ConditionalOnProperty(name = "conductor.queue.type", havingValue = "redis_cluster")
-    @Autowired
     public QueueDAO getQueueDAOCluster(
             JedisCluster jedisCluster,
             MeterRegistry registry,
@@ -83,7 +80,6 @@ public class RedisQueueConfiguration {
     @Bean
     @Primary
     @ConditionalOnProperty(name = "conductor.queue.type", havingValue = "redis_standalone")
-    @Autowired
     protected JedisPool getJedisPoolStandalone(QueueRedisProperties redisProperties) {
         ConfigurationHostSupplier hostSupplier = new ConfigurationHostSupplier(redisProperties);
         JedisPoolConfig config = new JedisPoolConfig();
@@ -119,7 +115,6 @@ public class RedisQueueConfiguration {
     @Bean
     @Primary
     @ConditionalOnProperty(name = "conductor.queue.type", havingValue = "redis_sentinel")
-    @Autowired
     public JedisSentinelPool getJedisPoolSentinel(QueueRedisProperties properties) {
         ConfigurationHostSupplier hostSupplier = new ConfigurationHostSupplier(properties);
         GenericObjectPoolConfig<?> genericObjectPoolConfig = new GenericObjectPoolConfig<>();
@@ -169,7 +164,6 @@ public class RedisQueueConfiguration {
     @Bean
     @Primary
     @ConditionalOnProperty(name = "conductor.queue.type", havingValue = "redis_cluster")
-    @Autowired
     public JedisCluster createJedisCommands(QueueRedisProperties properties) {
         ConfigurationHostSupplier hostSupplier = new ConfigurationHostSupplier(properties);
 
