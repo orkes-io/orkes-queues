@@ -12,12 +12,11 @@
  */
 package io.orkes.conductor.queue.config;
 
-import com.netflix.conductor.core.config.ConductorProperties;
-import com.netflix.conductor.dao.QueueDAO;
-import io.micrometer.core.instrument.MeterRegistry;
-import io.orkes.conductor.queue.dao.ClusteredRedisQueueDAO;
-import io.orkes.conductor.queue.dao.RedisQueueDAO;
-import lombok.extern.slf4j.Slf4j;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
+
 import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.EnableAutoConfiguration;
@@ -25,12 +24,16 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
-import redis.clients.jedis.*;
 
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
+import com.netflix.conductor.core.config.ConductorProperties;
+import com.netflix.conductor.dao.QueueDAO;
+
+import io.orkes.conductor.queue.dao.ClusteredRedisQueueDAO;
+import io.orkes.conductor.queue.dao.RedisQueueDAO;
+
+import io.micrometer.core.instrument.MeterRegistry;
+import lombok.extern.slf4j.Slf4j;
+import redis.clients.jedis.*;
 
 @EnableAutoConfiguration
 @AutoConfiguration
@@ -51,7 +54,7 @@ public class RedisQueueConfiguration {
         log.info("getQueueDAOStandalone init");
         return new RedisQueueDAO(registry, jedisPool, queueRedisProperties, properties);
     }
- 
+
     @Bean
     @Primary
     @ConditionalOnProperty(name = "conductor.queue.type", havingValue = "redis_sentinel")

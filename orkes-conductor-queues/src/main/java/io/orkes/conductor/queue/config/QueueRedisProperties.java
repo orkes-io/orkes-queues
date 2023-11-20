@@ -19,6 +19,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.convert.DurationUnit;
 
 import com.netflix.conductor.core.config.ConductorProperties;
+
 @ConfigurationProperties("conductor.redis")
 public class QueueRedisProperties {
 
@@ -290,5 +291,4 @@ public class QueueRedisProperties {
     public void setSsl(boolean ssl) {
         this.ssl = ssl;
     }
-
 }

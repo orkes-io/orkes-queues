@@ -27,6 +27,7 @@ queuing infrastructure for Orkes Conductor
 ### Requirements
 1. Redis version 6.2+
 2. The library supports Redis Standalone, Sentinel and Cluster modes
+3. JDK 17+
 
 ### Delivery semantics
 Orkes Queues provides `at-least once` delivery semantics.

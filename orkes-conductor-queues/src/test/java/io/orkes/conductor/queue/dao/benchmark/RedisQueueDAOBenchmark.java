@@ -183,7 +183,7 @@ public class RedisQueueDAOBenchmark {
 
     private static String generatePayload() {
         StringBuilder sb = new StringBuilder();
-        for(int i = 0; i < 10; i++) {
+        for (int i = 0; i < 10; i++) {
             sb.append(UUID.randomUUID().toString());
         }
         return sb.toString();

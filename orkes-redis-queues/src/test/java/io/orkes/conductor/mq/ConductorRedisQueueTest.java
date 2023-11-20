@@ -106,13 +106,14 @@ public class ConductorRedisQueueTest {
             popped = redisQueue3.pop(1, 10, TimeUnit.MILLISECONDS);
             assertNotNull(popped);
             found += popped.size();
-            if(found > 99) {
+            if (found > 99) {
                 break;
             }
         }
-        //This would have failed Prior to the fix in QueueMonitor.java
+        // This would have failed Prior to the fix in QueueMonitor.java
         assertEquals(100, found);
     }
+
     @Test
     public void testExists() {
         redisQueue.flush();
@@ -331,19 +332,21 @@ public class ConductorRedisQueueTest {
     public void testStrictPriority() {
         redisQueue.flush();
 
-        redisQueue.pop(100,0,TimeUnit.MILLISECONDS);
+        redisQueue.pop(100, 0, TimeUnit.MILLISECONDS);
 
-        for(int i = 1; i <= 100; i++)
-        {
-            redisQueue.push(Arrays.asList(new QueueMessage(String.valueOf(i),"", 0, i)));
+        for (int i = 1; i <= 100; i++) {
+            redisQueue.push(Arrays.asList(new QueueMessage(String.valueOf(i), "", 0, i)));
         }
 
-        List<QueueMessage> messages = redisQueue.pop(1,0,TimeUnit.MILLISECONDS); // 1 item popped, 99 items priority messed up priority in Redis
+        List<QueueMessage> messages =
+                redisQueue.pop(
+                        1, 0, TimeUnit.MILLISECONDS); // 1 item popped, 99 items priority messed up
+        // priority in Redis
         assertEquals(1, messages.size());
         assertEquals("1", messages.get(0).getId());
 
         // push message with highest priority, and it should get poped first
-        redisQueue.push(Arrays.asList(new QueueMessage(String.valueOf(1),"", 0, 1)));
+        redisQueue.push(Arrays.asList(new QueueMessage(String.valueOf(1), "", 0, 1)));
         assertEquals(1, messages.size());
         assertEquals("1", messages.get(0).getId());
     }
