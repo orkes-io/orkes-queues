@@ -68,6 +68,9 @@ public class QueueRedisProperties {
     /** Database number. Defaults to a 0. Can be anywhere from 0 to 15 */
     private int database = 0;
 
+    /** The username to be used for connecting to redis if using Auth with ACL */
+    private String username = null;
+
     /**
      * The maximum amount of time to wait for a connection to become available from the connection
      * pool
@@ -266,6 +269,14 @@ public class QueueRedisProperties {
 
     public void setDatabase(int database) {
         this.database = database;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
     }
 
     public String getQueuePrefix() {
