@@ -90,7 +90,18 @@ public class RedisQueueConfiguration {
                 redisProperties.isSsl());
         Host host = hostSupplier.getHosts().get(0);
 
-        if (host.getPassword() != null) {
+        if (redisProperties.getUsername() != null &&  host.getPassword() != null) {
+            log.info("Connecting to Redis Standalone with ACL user AUTH");
+            return new JedisPool(
+                    config,
+                    host.getHostName(),
+                    host.getPort(),
+                    Protocol.DEFAULT_TIMEOUT,
+                    redisProperties.getUsername(),
+                    host.getPassword(),
+                    redisProperties.getDatabase(),
+                    redisProperties.isSsl());
+        } else if (host.getPassword() != null) {
             log.info("Connecting to Redis Standalone with AUTH");
             return new JedisPool(
                     config,
@@ -136,7 +147,24 @@ public class RedisQueueConfiguration {
         }
         // We use the password of the first sentinel host as password and sentinelPassword
         String password = getPassword(hostSupplier.getHosts());
-        if (password != null) {
+        if (properties.getUsername() != null && password != null) {
+            return new JedisSentinelPool(
+                    properties.getClusterName(),
+                    sentinels,
+                    genericObjectPoolConfig,
+                    Protocol.DEFAULT_TIMEOUT,
+                    Protocol.DEFAULT_TIMEOUT,
+                    properties.getUsername(),
+                    password,
+                    properties.getDatabase(),
+                    null,
+                    Protocol.DEFAULT_TIMEOUT,
+                    Protocol.DEFAULT_TIMEOUT,
+                    properties.getUsername(),
+                    password,
+                    null);
+
+        } else if (password != null) {
             return new JedisSentinelPool(
                     properties.getClusterName(),
                     sentinels,
