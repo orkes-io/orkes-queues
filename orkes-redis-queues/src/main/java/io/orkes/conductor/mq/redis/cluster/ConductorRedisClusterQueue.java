@@ -23,6 +23,7 @@ import org.apache.commons.lang3.StringUtils;
 
 import io.orkes.conductor.mq.ConductorQueue;
 import io.orkes.conductor.mq.QueueMessage;
+import io.orkes.conductor.mq.redis.QueueMonitorProperties;
 
 import lombok.extern.slf4j.Slf4j;
 import redis.clients.jedis.JedisCluster;
@@ -45,12 +46,16 @@ public class ConductorRedisClusterQueue implements ConductorQueue {
 
     private final ClusteredQueueMonitor queueMonitor;
 
-    public ConductorRedisClusterQueue(String queueName, JedisCluster jedisCluster) {
+    public ConductorRedisClusterQueue(
+            String queueName,
+            JedisCluster jedisCluster,
+            QueueMonitorProperties queueMonitorProperties) {
         this.jedis = jedisCluster;
         this.clock = Clock.systemDefaultZone();
         this.queueName = queueName;
         this.payloadKey = queueName + "_payload";
-        this.queueMonitor = new ClusteredQueueMonitor(jedisCluster, queueName);
+        this.queueMonitor =
+                new ClusteredQueueMonitor(jedisCluster, queueName, queueMonitorProperties);
 
         log.info("ConductorRedisClusterQueue started serving {}", queueName);
     }

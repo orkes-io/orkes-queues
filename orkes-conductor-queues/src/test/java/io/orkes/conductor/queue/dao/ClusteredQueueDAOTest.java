@@ -22,6 +22,7 @@ import org.testcontainers.utility.DockerImageName;
 
 import com.netflix.conductor.core.config.ConductorProperties;
 
+import io.orkes.conductor.mq.redis.QueueMonitorProperties;
 import io.orkes.conductor.queue.config.QueueRedisProperties;
 
 import com.google.common.util.concurrent.Uninterruptibles;
@@ -60,8 +61,13 @@ public class ClusteredQueueDAOTest extends BaseQueueDAOTest {
         JedisCluster jedisCluster = new JedisCluster(hostAndPorts);
         ConductorProperties properties = new ConductorProperties();
         QueueRedisProperties queueRedisProperties = new QueueRedisProperties(properties);
+        QueueMonitorProperties queueMonitorProperties = new QueueMonitorProperties();
         redisQueue =
                 new ClusteredRedisQueueDAO(
-                        registry, jedisCluster, queueRedisProperties, properties);
+                        registry,
+                        jedisCluster,
+                        queueRedisProperties,
+                        properties,
+                        queueMonitorProperties);
     }
 }

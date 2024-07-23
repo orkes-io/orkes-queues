@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
 
+import io.orkes.conductor.mq.redis.QueueMonitorProperties;
 import io.orkes.conductor.mq.redis.single.ConductorRedisQueue;
 
 import com.google.common.util.concurrent.Uninterruptibles;
@@ -56,7 +57,7 @@ public class ConductorRedisQueueTest {
         config.setMaxTotal(10);
 
         jedisPool = new JedisPool(config, redis.getHost(), redis.getFirstMappedPort());
-        redisQueue = new ConductorRedisQueue(queueName, jedisPool);
+        redisQueue = new ConductorRedisQueue(queueName, jedisPool, new QueueMonitorProperties());
     }
 
     private QueueMessage popOne() {
@@ -70,7 +71,8 @@ public class ConductorRedisQueueTest {
     @Test
     public void testEmptyPoll() {
         redisQueue.flush();
-        ConductorRedisQueue redisQueue2 = new ConductorRedisQueue(queueName + "X", jedisPool);
+        ConductorRedisQueue redisQueue2 =
+                new ConductorRedisQueue(queueName + "X", jedisPool, new QueueMonitorProperties());
         int count = 0;
         for (int i = 0; i < 10; i++) {
             QueueMessage message = popOne();
@@ -83,7 +85,9 @@ public class ConductorRedisQueueTest {
 
     @Test
     public void testExpiredMessage() {
-        ConductorRedisQueue redisQueue3 = new ConductorRedisQueue(queueName + "Xxxx", jedisPool);
+        ConductorRedisQueue redisQueue3 =
+                new ConductorRedisQueue(
+                        queueName + "Xxxx", jedisPool, new QueueMonitorProperties());
         redisQueue3.setQueueUnackTime(5);
         List<QueueMessage> msgs = new ArrayList<>();
         for (int i = 0; i < 100; i++) {

@@ -28,6 +28,7 @@ import org.springframework.context.annotation.Primary;
 import com.netflix.conductor.core.config.ConductorProperties;
 import com.netflix.conductor.dao.QueueDAO;
 
+import io.orkes.conductor.mq.redis.QueueMonitorProperties;
 import io.orkes.conductor.queue.dao.ClusteredRedisQueueDAO;
 import io.orkes.conductor.queue.dao.RedisQueueDAO;
 
@@ -50,9 +51,11 @@ public class RedisQueueConfiguration {
             JedisPool jedisPool,
             MeterRegistry registry,
             QueueRedisProperties queueRedisProperties,
-            ConductorProperties properties) {
+            ConductorProperties properties,
+            QueueMonitorProperties queueMonitorProperties) {
         log.info("getQueueDAOStandalone init");
-        return new RedisQueueDAO(registry, jedisPool, queueRedisProperties, properties);
+        return new RedisQueueDAO(
+                registry, jedisPool, queueRedisProperties, properties, queueMonitorProperties);
     }
 
     @Bean
@@ -62,8 +65,14 @@ public class RedisQueueConfiguration {
             JedisSentinelPool jedisSentinelPool,
             MeterRegistry registry,
             QueueRedisProperties queueRedisProperties,
-            ConductorProperties properties) {
-        return new RedisQueueDAO(registry, jedisSentinelPool, queueRedisProperties, properties);
+            ConductorProperties properties,
+            QueueMonitorProperties queueMonitorProperties) {
+        return new RedisQueueDAO(
+                registry,
+                jedisSentinelPool,
+                queueRedisProperties,
+                properties,
+                queueMonitorProperties);
     }
 
     @Bean
@@ -73,8 +82,10 @@ public class RedisQueueConfiguration {
             JedisCluster jedisCluster,
             MeterRegistry registry,
             QueueRedisProperties queueRedisProperties,
-            ConductorProperties properties) {
-        return new ClusteredRedisQueueDAO(registry, jedisCluster, queueRedisProperties, properties);
+            ConductorProperties properties,
+            QueueMonitorProperties queueMonitorProperties) {
+        return new ClusteredRedisQueueDAO(
+                registry, jedisCluster, queueRedisProperties, properties, queueMonitorProperties);
     }
 
     @Bean
@@ -90,7 +101,7 @@ public class RedisQueueConfiguration {
                 redisProperties.isSsl());
         Host host = hostSupplier.getHosts().get(0);
 
-        if (redisProperties.getUsername() != null &&  host.getPassword() != null) {
+        if (redisProperties.getUsername() != null && host.getPassword() != null) {
             log.info("Connecting to Redis Standalone with ACL user AUTH");
             return new JedisPool(
                     config,

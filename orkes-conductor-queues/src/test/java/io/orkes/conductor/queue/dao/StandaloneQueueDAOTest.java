@@ -21,6 +21,7 @@ import org.testcontainers.utility.DockerImageName;
 
 import com.netflix.conductor.core.config.ConductorProperties;
 
+import io.orkes.conductor.mq.redis.QueueMonitorProperties;
 import io.orkes.conductor.queue.config.QueueRedisProperties;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -50,8 +51,13 @@ public class StandaloneQueueDAOTest extends BaseQueueDAOTest {
         SimpleMeterRegistry meterRegistry = new SimpleMeterRegistry();
         ConductorProperties conductorProperties = new ConductorProperties();
         QueueRedisProperties queueRedisProperties = new QueueRedisProperties(conductorProperties);
+        QueueMonitorProperties queueMonitorProperties = new QueueMonitorProperties();
         redisQueue =
                 new RedisQueueDAO(
-                        meterRegistry, jedisPool, queueRedisProperties, conductorProperties);
+                        meterRegistry,
+                        jedisPool,
+                        queueRedisProperties,
+                        conductorProperties,
+                        queueMonitorProperties);
     }
 }

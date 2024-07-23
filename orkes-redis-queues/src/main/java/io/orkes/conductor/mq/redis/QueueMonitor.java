@@ -42,6 +42,14 @@ public abstract class QueueMonitor {
 
     private int maxPollCount = 100;
 
+    public void setMaxPollCount(int maxPollCount) {
+        this.maxPollCount = maxPollCount;
+    }
+
+    public int getMaxPollCount() {
+        return maxPollCount;
+    }
+
     public QueueMonitor(String queueName) {
         this.queueName = queueName;
         this.clock = Clock.systemDefaultZone();
