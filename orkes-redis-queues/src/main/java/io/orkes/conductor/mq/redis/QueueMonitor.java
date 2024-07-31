@@ -56,7 +56,7 @@ public abstract class QueueMonitor {
         this.peekedMessages = new LinkedBlockingQueue<>();
         this.executorService =
                 new ThreadPoolExecutor(
-                        1, 1, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(maxPollCount));
+                        1, 1, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(getMaxPollCount()));
     }
 
     public List<QueueMessage> pop(int count, int waitTime, TimeUnit timeUnit) {
