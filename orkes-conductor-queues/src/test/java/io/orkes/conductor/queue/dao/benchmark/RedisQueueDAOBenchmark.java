@@ -22,6 +22,7 @@ import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
 import com.netflix.conductor.core.config.ConductorProperties;
 import com.netflix.conductor.core.events.queue.Message;
 
+import io.orkes.conductor.mq.redis.QueueMonitorProperties;
 import io.orkes.conductor.queue.config.QueueRedisProperties;
 import io.orkes.conductor.queue.dao.BaseRedisQueueDAO;
 import io.orkes.conductor.queue.dao.ClusteredRedisQueueDAO;
@@ -146,9 +147,14 @@ public class RedisQueueDAOBenchmark {
         JedisCluster jedisCluster = new JedisCluster(hostAndPorts);
         ConductorProperties properties = new ConductorProperties();
         QueueRedisProperties queueRedisProperties = new QueueRedisProperties(properties);
+        QueueMonitorProperties queueMonitorProperties = new QueueMonitorProperties();
         ClusteredRedisQueueDAO clusteredRedisQueue =
                 new ClusteredRedisQueueDAO(
-                        registry, jedisCluster, queueRedisProperties, properties);
+                        registry,
+                        jedisCluster,
+                        queueRedisProperties,
+                        properties,
+                        queueMonitorProperties);
 
         RedisQueueDAOBenchmark benchmark = new RedisQueueDAOBenchmark(clusteredRedisQueue);
         benchmark.runBenchmark();
@@ -166,6 +172,7 @@ public class RedisQueueDAOBenchmark {
         config.setMaxTotal(20);
         JedisPool jedisPool = new JedisPool(config, "localhost", 6379);
         ConductorProperties properties = new ConductorProperties();
+        QueueMonitorProperties queueMonitorProperties = new QueueMonitorProperties();
 
         RedisQueueDAOBenchmark benchmark =
                 new RedisQueueDAOBenchmark(
@@ -173,7 +180,8 @@ public class RedisQueueDAOBenchmark {
                                 registry,
                                 jedisPool,
                                 new QueueRedisProperties(properties),
-                                properties));
+                                properties,
+                                queueMonitorProperties));
 
         benchmark.runBenchmark();
 

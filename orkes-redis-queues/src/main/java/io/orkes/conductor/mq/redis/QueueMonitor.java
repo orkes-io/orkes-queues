@@ -42,13 +42,21 @@ public abstract class QueueMonitor {
 
     private int maxPollCount = 100;
 
+    public void setMaxPollCount(int maxPollCount) {
+        this.maxPollCount = maxPollCount;
+    }
+
+    public int getMaxPollCount() {
+        return maxPollCount;
+    }
+
     public QueueMonitor(String queueName) {
         this.queueName = queueName;
         this.clock = Clock.systemDefaultZone();
         this.peekedMessages = new LinkedBlockingQueue<>();
         this.executorService =
                 new ThreadPoolExecutor(
-                        1, 1, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(maxPollCount));
+                        1, 1, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(getMaxPollCount()));
     }
 
     public List<QueueMessage> pop(int count, int waitTime, TimeUnit timeUnit) {

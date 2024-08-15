@@ -16,6 +16,7 @@ import com.netflix.conductor.core.config.ConductorProperties;
 import com.netflix.conductor.dao.QueueDAO;
 
 import io.orkes.conductor.mq.ConductorQueue;
+import io.orkes.conductor.mq.redis.QueueMonitorProperties;
 import io.orkes.conductor.mq.redis.cluster.ConductorRedisClusterQueue;
 import io.orkes.conductor.queue.config.QueueRedisProperties;
 
@@ -30,21 +31,26 @@ public class ClusteredRedisQueueDAO extends BaseRedisQueueDAO implements QueueDA
 
     private final MeterRegistry registry;
 
+    private final QueueMonitorProperties queueMonitorProperties;
+
     public ClusteredRedisQueueDAO(
             MeterRegistry registry,
             JedisCluster jedisCluster,
             QueueRedisProperties queueRedisProperties,
-            ConductorProperties conductorProperties) {
+            ConductorProperties conductorProperties,
+            QueueMonitorProperties queueMonitorProperties) {
 
         super(queueRedisProperties, conductorProperties);
         this.registry = registry;
         this.jedisCluster = jedisCluster;
+        this.queueMonitorProperties = queueMonitorProperties;
         log.info("Queues initialized using {}", ClusteredRedisQueueDAO.class.getName());
     }
 
     @Override
     protected ConductorQueue getConductorQueue(String queueKey) {
-        ConductorRedisClusterQueue queue = new ConductorRedisClusterQueue(queueKey, jedisCluster);
+        ConductorRedisClusterQueue queue =
+                new ConductorRedisClusterQueue(queueKey, jedisCluster, queueMonitorProperties);
         return queue;
     }
 }

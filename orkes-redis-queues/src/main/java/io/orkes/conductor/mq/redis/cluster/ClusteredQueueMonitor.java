@@ -18,6 +18,7 @@ import java.util.Arrays;
 import java.util.List;
 
 import io.orkes.conductor.mq.redis.QueueMonitor;
+import io.orkes.conductor.mq.redis.QueueMonitorProperties;
 
 import lombok.extern.slf4j.Slf4j;
 import redis.clients.jedis.JedisCluster;
@@ -32,11 +33,15 @@ public class ClusteredQueueMonitor extends QueueMonitor {
 
     private final String queueName;
 
-    public ClusteredQueueMonitor(JedisCluster jedisCluster, String queueName) {
+    public ClusteredQueueMonitor(
+            JedisCluster jedisCluster,
+            String queueName,
+            QueueMonitorProperties queueMonitorProperties) {
         super(queueName);
         this.queueName = queueName;
         this.jedisCluster = jedisCluster;
         this.scriptSha = loadScript();
+        this.setMaxPollCount(queueMonitorProperties.getMaxPollCount());
     }
 
     private String loadScript() {

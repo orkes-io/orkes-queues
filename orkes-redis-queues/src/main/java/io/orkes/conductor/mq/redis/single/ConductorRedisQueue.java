@@ -22,6 +22,7 @@ import org.apache.commons.lang3.StringUtils;
 import io.orkes.conductor.mq.ConductorQueue;
 import io.orkes.conductor.mq.QueueMessage;
 import io.orkes.conductor.mq.redis.QueueMonitor;
+import io.orkes.conductor.mq.redis.QueueMonitorProperties;
 
 import lombok.extern.slf4j.Slf4j;
 import redis.clients.jedis.Jedis;
@@ -42,12 +43,15 @@ public class ConductorRedisQueue implements ConductorQueue {
 
     private final QueueMonitor queueMonitor;
 
-    public ConductorRedisQueue(String queueName, JedisPoolAbstract jedisPool) {
+    public ConductorRedisQueue(
+            String queueName,
+            JedisPoolAbstract jedisPool,
+            QueueMonitorProperties queueMonitorProperties) {
         this.jedisPool = jedisPool;
         this.clock = Clock.systemDefaultZone();
         this.queueName = queueName;
         this.payloadKey = queueName + "_payload";
-        this.queueMonitor = new RedisQueueMonitor(jedisPool, queueName);
+        this.queueMonitor = new RedisQueueMonitor(jedisPool, queueName, queueMonitorProperties);
         log.info("ConductorRedisQueue started serving {}", queueName);
     }
 
