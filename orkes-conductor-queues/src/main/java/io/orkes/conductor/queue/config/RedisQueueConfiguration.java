@@ -224,6 +224,7 @@ public class RedisQueueConfiguration {
                 Protocol.DEFAULT_TIMEOUT,
                 Protocol.DEFAULT_TIMEOUT,
                 DEFAULT_MAX_ATTEMPTS,
+                properties.getUsername(),
                 password,
                 null,
                 genericObjectPoolConfig,
