@@ -12,16 +12,16 @@
  */
 package io.orkes.conductor.mq.redis;
 
+import com.google.common.util.concurrent.Uninterruptibles;
+import io.orkes.conductor.mq.QueueMessage;
+import lombok.extern.slf4j.Slf4j;
+
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.*;
-
-import io.orkes.conductor.mq.QueueMessage;
-
-import com.google.common.util.concurrent.Uninterruptibles;
-import lombok.extern.slf4j.Slf4j;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public abstract class QueueMonitor {
@@ -31,8 +31,6 @@ public abstract class QueueMonitor {
     private final Clock clock;
 
     private final LinkedBlockingQueue<QueueMessage> peekedMessages;
-
-    private final ExecutorService executorService;
 
     private final String queueName;
 
@@ -54,9 +52,6 @@ public abstract class QueueMonitor {
         this.queueName = queueName;
         this.clock = Clock.systemDefaultZone();
         this.peekedMessages = new LinkedBlockingQueue<>();
-        this.executorService =
-                new ThreadPoolExecutor(
-                        1, 1, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(getMaxPollCount()));
     }
 
     public List<QueueMessage> pop(int count, int waitTime, TimeUnit timeUnit) {
