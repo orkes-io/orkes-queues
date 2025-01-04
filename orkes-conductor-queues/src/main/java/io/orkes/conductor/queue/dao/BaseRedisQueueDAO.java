@@ -101,12 +101,8 @@ public abstract class BaseRedisQueueDAO implements QueueDAO {
 
     @Override
     public final List<String> pop(String queueName, int count, int timeout) {
-        // Keep the timeout to a minimum of 100ms
-        if (timeout < 100) {
-            timeout = 100;
-        }
         List<QueueMessage> messages = get(queueName).pop(count, timeout, TimeUnit.MILLISECONDS);
-        return messages.stream().map(msg -> msg.getId()).collect(Collectors.toList());
+        return messages.stream().map(QueueMessage::getId).collect(Collectors.toList());
     }
 
     @Override
