@@ -56,7 +56,7 @@ public abstract class QueueMonitor {
 
     public List<QueueMessage> pop(int count, int waitTime, TimeUnit timeUnit) {
         if (count <= 0) {
-            log.warn("Negative poll count {}");
+            log.warn("Negative poll count {}", count);
             // Negative number shouldn't happen, but it can be zero and in that case we don't do
             // anything!
             return new ArrayList<>();
@@ -76,7 +76,7 @@ public abstract class QueueMonitor {
                 // The sleep method below, just does Thread.wait should be more CPU friendly
                 QueueMessage message = peekedMessages.poll();
                 if (message == null) {
-                    if (!waited) {
+                    if (!waited && waitTime > 0) {
                         Uninterruptibles.sleepUninterruptibly(waitTime, timeUnit);
                         waited = true;
                         continue;
