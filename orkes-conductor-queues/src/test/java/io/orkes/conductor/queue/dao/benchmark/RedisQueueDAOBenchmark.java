@@ -125,8 +125,8 @@ public class RedisQueueDAOBenchmark {
                         + " == "
                         + count.get()
                         + " in "
-                        + time
-                        + " second. Rate -> "
+                        + (time/1000)
+                        + " second(s). Rate -> "
                         + (int) avg
                         + "/sec");
         es.shutdown();
