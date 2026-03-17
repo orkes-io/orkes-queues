@@ -12,6 +12,8 @@
  */
 package io.orkes.conductor.queue.config;
 
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -30,6 +32,7 @@ import com.netflix.conductor.dao.QueueDAO;
 
 import io.orkes.conductor.mq.redis.QueueMonitorProperties;
 import io.orkes.conductor.queue.dao.ClusteredRedisQueueDAO;
+import io.orkes.conductor.queue.dao.InMemoryQueueDAO;
 import io.orkes.conductor.queue.dao.RedisQueueDAO;
 
 import io.micrometer.core.instrument.MeterRegistry;
@@ -73,6 +76,18 @@ public class RedisQueueConfiguration {
                 queueRedisProperties,
                 properties,
                 queueMonitorProperties);
+    }
+
+    @Bean
+    @Primary
+    @ConditionalOnProperty(name = "conductor.queue.type", havingValue = "memory")
+    public QueueDAO getQueueDAOInMemory(
+            QueueRedisProperties queueRedisProperties,
+            ConductorProperties properties) {
+        String dataDir =
+                System.getProperty("conductor.queue.inmemory.dataDir", "./data/queues");
+        log.info("getQueueDAOInMemory init with dataDir={}", dataDir);
+        return new InMemoryQueueDAO(queueRedisProperties, properties, Paths.get(dataDir));
     }
 
     @Bean
