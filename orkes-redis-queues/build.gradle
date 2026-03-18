@@ -1,5 +1,7 @@
 dependencies {
 
+    implementation project(":orkes-memory-queues")
+
     implementation "redis.clients:jedis:${versions.revJedis}"
     implementation 'org.springframework.boot:spring-boot-starter'
 
