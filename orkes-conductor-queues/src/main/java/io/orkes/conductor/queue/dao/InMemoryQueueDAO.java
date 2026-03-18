@@ -21,6 +21,7 @@ import com.netflix.conductor.dao.QueueDAO;
 import io.orkes.conductor.mq.ConductorQueue;
 import io.orkes.conductor.mq.inmemory.ConductorInMemoryQueue;
 import io.orkes.conductor.mq.inmemory.QueueStatePersistence;
+import io.orkes.conductor.mq.inmemory.WriteAheadLog;
 import io.orkes.conductor.queue.config.QueueRedisProperties;
 
 import lombok.extern.slf4j.Slf4j;
@@ -28,7 +29,7 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class InMemoryQueueDAO extends BaseRedisQueueDAO implements QueueDAO {
 
-    private final QueueStatePersistence persistence;
+    private final WriteAheadLog wal;
     private final Map<String, QueueStatePersistence.QueueState> preloadedStates;
 
     public InMemoryQueueDAO(
@@ -37,8 +38,8 @@ public class InMemoryQueueDAO extends BaseRedisQueueDAO implements QueueDAO {
             Path dataDir) {
 
         super(queueRedisProperties, conductorProperties);
-        this.persistence = new QueueStatePersistence(dataDir);
-        this.preloadedStates = persistence.loadAll();
+        this.wal = new WriteAheadLog(dataDir);
+        this.preloadedStates = wal.loadAll();
         log.info(
                 "Queues initialized using {} with {} pre-loaded queues from {}",
                 InMemoryQueueDAO.class.getName(),
@@ -49,6 +50,6 @@ public class InMemoryQueueDAO extends BaseRedisQueueDAO implements QueueDAO {
     @Override
     protected ConductorQueue getConductorQueue(String queueKey) {
         QueueStatePersistence.QueueState state = preloadedStates.remove(queueKey);
-        return new ConductorInMemoryQueue(queueKey, persistence, state);
+        return new ConductorInMemoryQueue(queueKey, null, wal, state);
     }
 }

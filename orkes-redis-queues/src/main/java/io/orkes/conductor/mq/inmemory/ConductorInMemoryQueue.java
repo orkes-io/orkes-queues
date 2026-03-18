@@ -12,7 +12,6 @@
  */
 package io.orkes.conductor.mq.inmemory;
 
-import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
@@ -31,7 +30,8 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * In-memory implementation of {@link ConductorQueue} backed by a {@link ConcurrentSkipListSet}
  * (replacing Redis ZSET) and {@link ConcurrentHashMap} maps (replacing Redis Hash). Supports
- * optional async disk persistence via {@link QueueStatePersistence}.
+ * durable disk persistence via either a {@link WriteAheadLog} (fast, O(1) appends) or
+ * a legacy {@link QueueStatePersistence} (full snapshot per mutation).
  */
 @Slf4j
 public class ConductorInMemoryQueue implements ConductorQueue {
@@ -54,14 +54,27 @@ public class ConductorInMemoryQueue implements ConductorQueue {
     private volatile int queueUnackTime = 30_000;
 
     private final QueueStatePersistence persistence;
+    private final WriteAheadLog wal;
 
     public ConductorInMemoryQueue(String queueName, QueueStatePersistence persistence) {
-        this(queueName, persistence, null);
+        this(queueName, persistence, null, null);
+    }
+
+    public ConductorInMemoryQueue(String queueName, WriteAheadLog wal) {
+        this(queueName, null, wal, null);
     }
 
     public ConductorInMemoryQueue(
             String queueName,
             QueueStatePersistence persistence,
+            QueueStatePersistence.QueueState initialState) {
+        this(queueName, persistence, null, initialState);
+    }
+
+    public ConductorInMemoryQueue(
+            String queueName,
+            QueueStatePersistence persistence,
+            WriteAheadLog wal,
             QueueStatePersistence.QueueState initialState) {
         this.queueName = queueName;
         this.clock = Clock.systemDefaultZone();
@@ -69,6 +82,7 @@ public class ConductorInMemoryQueue implements ConductorQueue {
         this.scoreIndex = new ConcurrentHashMap<>();
         this.payloads = new ConcurrentHashMap<>();
         this.persistence = persistence;
+        this.wal = wal;
 
         if (initialState != null) {
             hydrate(initialState);
@@ -119,11 +133,10 @@ public class ConductorInMemoryQueue implements ConductorQueue {
     private List<QueueMessage> doPop(int count) {
         List<QueueMessage> result = new ArrayList<>();
         long now = clock.millis();
+        List<WriteAheadLog.WalEntry> walEntries = wal != null ? new ArrayList<>() : null;
 
         popLock.lock();
         try {
-            // Create a sentinel to define the upper bound: score = now + 1 (exclusive)
-            // We iterate from the head (lowest score) and collect eligible messages
             Iterator<ScoredMessage> iterator = sortedMessages.iterator();
             List<ScoredMessage> toRemove = new ArrayList<>();
             List<ScoredMessage> toAdd = new ArrayList<>();
@@ -131,22 +144,21 @@ public class ConductorInMemoryQueue implements ConductorQueue {
             while (iterator.hasNext() && result.size() < count) {
                 ScoredMessage sm = iterator.next();
                 if (sm.getScore() > now) {
-                    break; // No more eligible messages (sorted by score)
+                    break;
                 }
 
                 toRemove.add(sm);
 
-                // Re-score to now + queueUnackTime (message becomes invisible)
                 double newScore = now + queueUnackTime;
                 ScoredMessage newSm = new ScoredMessage(newScore, sm.getMessageId());
                 toAdd.add(newSm);
                 scoreIndex.put(sm.getMessageId(), newScore);
 
-                // Extract priority from original score's fractional part
-                int priority = new BigDecimal(sm.getScore())
-                        .remainder(BigDecimal.ONE)
-                        .multiply(HUNDRED)
-                        .intValue();
+                if (walEntries != null) {
+                    walEntries.add(WriteAheadLog.WalEntry.rescore(sm.getMessageId(), newScore));
+                }
+
+                int priority = (int) ((sm.getScore() % 1.0) * 100);
 
                 String payload = payloads.get(sm.getMessageId());
                 QueueMessage msg = new QueueMessage(
@@ -154,7 +166,6 @@ public class ConductorInMemoryQueue implements ConductorQueue {
                 result.add(msg);
             }
 
-            // Apply changes
             sortedMessages.removeAll(toRemove);
             sortedMessages.addAll(toAdd);
         } finally {
@@ -162,7 +173,11 @@ public class ConductorInMemoryQueue implements ConductorQueue {
         }
 
         if (!result.isEmpty()) {
-            notifyPersistence();
+            if (walEntries != null) {
+                appendWalEntries(walEntries);
+            } else {
+                notifyPersistence();
+            }
         }
 
         return result;
@@ -176,13 +191,18 @@ public class ConductorInMemoryQueue implements ConductorQueue {
         }
         sortedMessages.remove(new ScoredMessage(score, messageId));
         payloads.remove(messageId);
-        notifyPersistence();
+        if (wal != null) {
+            appendWalEntry(WriteAheadLog.WalEntry.remove(messageId));
+        } else {
+            notifyPersistence();
+        }
         return true;
     }
 
     @Override
     public void push(List<QueueMessage> messages) {
         long now = clock.millis();
+        List<WriteAheadLog.WalEntry> walEntries = wal != null ? new ArrayList<>() : null;
         for (QueueMessage msg : messages) {
             double score = getScore(now, msg);
             String messageId = msg.getId();
@@ -194,11 +214,21 @@ public class ConductorInMemoryQueue implements ConductorQueue {
             }
             sortedMessages.add(new ScoredMessage(score, messageId));
 
+            String payload = null;
             if (StringUtils.isNotBlank(msg.getPayload())) {
                 payloads.put(messageId, msg.getPayload());
+                payload = msg.getPayload();
+            }
+
+            if (walEntries != null) {
+                walEntries.add(WriteAheadLog.WalEntry.push(messageId, score, payload));
             }
         }
-        notifyPersistence();
+        if (walEntries != null) {
+            appendWalEntries(walEntries);
+        } else {
+            notifyPersistence();
+        }
     }
 
     @Override
@@ -211,7 +241,11 @@ public class ConductorInMemoryQueue implements ConductorQueue {
         sortedMessages.remove(new ScoredMessage(oldScore, messageId));
         sortedMessages.add(new ScoredMessage(newScore, messageId));
         scoreIndex.put(messageId, newScore);
-        notifyPersistence();
+        if (wal != null) {
+            appendWalEntry(WriteAheadLog.WalEntry.rescore(messageId, newScore));
+        } else {
+            notifyPersistence();
+        }
         return true;
     }
 
@@ -226,7 +260,11 @@ public class ConductorInMemoryQueue implements ConductorQueue {
         if (score != null) {
             sortedMessages.remove(new ScoredMessage(score, messageId));
             payloads.remove(messageId);
-            notifyPersistence();
+            if (wal != null) {
+                appendWalEntry(WriteAheadLog.WalEntry.remove(messageId));
+            } else {
+                notifyPersistence();
+            }
         }
     }
 
@@ -236,10 +274,7 @@ public class ConductorInMemoryQueue implements ConductorQueue {
         if (score == null) {
             return null;
         }
-        int priority = new BigDecimal(score)
-                .remainder(BigDecimal.ONE)
-                .multiply(HUNDRED)
-                .intValue();
+        int priority = (int) ((score % 1.0) * 100);
         String payload = payloads.get(messageId);
         return new QueueMessage(messageId, payload, score.longValue(), priority);
     }
@@ -249,7 +284,9 @@ public class ConductorInMemoryQueue implements ConductorQueue {
         sortedMessages.clear();
         scoreIndex.clear();
         payloads.clear();
-        if (persistence != null) {
+        if (wal != null) {
+            wal.delete(queueName);
+        } else if (persistence != null) {
             persistence.delete(queueName);
         }
     }
@@ -286,12 +323,29 @@ public class ConductorInMemoryQueue implements ConductorQueue {
     }
 
     /**
-     * Synchronously persist the current queue state to disk. Called after every mutation
-     * to guarantee durability — the caller blocks until the write is complete.
+     * Synchronously persist the current queue state to disk (legacy full-snapshot path).
      */
     private void notifyPersistence() {
         if (persistence != null) {
             persistence.persistNow(queueName, snapshot());
+        }
+    }
+
+    /** Append a single WAL entry and trigger compaction if threshold is reached. */
+    private void appendWalEntry(WriteAheadLog.WalEntry entry) {
+        int count = wal.appendEntry(queueName, entry);
+        maybeCompact(count);
+    }
+
+    /** Append multiple WAL entries in one flush and trigger compaction if needed. */
+    private void appendWalEntries(List<WriteAheadLog.WalEntry> entries) {
+        int count = wal.appendEntries(queueName, entries);
+        maybeCompact(count);
+    }
+
+    private void maybeCompact(int walEntryCount) {
+        if (walEntryCount >= wal.getCompactThreshold()) {
+            wal.compact(queueName, snapshot());
         }
     }
 }
