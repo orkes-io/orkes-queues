@@ -18,7 +18,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.Test;
@@ -31,8 +30,8 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Chaos tests for the in-memory queue + disk persistence layer.
  *
- * <p>These tests inject failures (disk write failures, corrupted files, intermittent faults)
- * and verify that the queue maintains consistency and correctness under adverse conditions.
+ * <p>These tests inject failures (disk write failures, corrupted files, intermittent faults) and
+ * verify that the queue maintains consistency and correctness under adverse conditions.
  */
 public class QueueChaosTest {
 
@@ -154,7 +153,9 @@ public class QueueChaosTest {
         // In-memory: message is re-scored to the future (invisible)
         // Disk: still has old score (pop's write failed)
         QueueStatePersistence.QueueState postPopState = persistence.load("chaos-pop");
-        assertEquals(prePopscore, postPopState.getMessages().get(0).getScore(),
+        assertEquals(
+                prePopscore,
+                postPopState.getMessages().get(0).getScore(),
                 "Disk should still have pre-pop score since write failed");
 
         // Simulate crash — recover from disk
@@ -197,7 +198,9 @@ public class QueueChaosTest {
         // Disk: message still present (ack write failed)
         QueueStatePersistence.QueueState diskState = persistence.load("chaos-ack");
         assertNotNull(diskState);
-        assertEquals(1, diskState.getMessages().size(),
+        assertEquals(
+                1,
+                diskState.getMessages().size(),
                 "Disk should still have the message since ack write failed");
 
         // Simulate crash — message reappears
@@ -205,7 +208,10 @@ public class QueueChaosTest {
         QueueStatePersistence.QueueState loadedState = persistence2.load("chaos-ack");
         ConductorInMemoryQueue recovered =
                 new ConductorInMemoryQueue("chaos-ack", persistence2, loadedState);
-        assertEquals(1, recovered.size(), "Message should reappear after crash since ack wasn't persisted");
+        assertEquals(
+                1,
+                recovered.size(),
+                "Message should reappear after crash since ack wasn't persisted");
 
         persistence.shutdown();
         persistence2.shutdown();
@@ -241,13 +247,16 @@ public class QueueChaosTest {
 
         QueueStatePersistence.QueueState freshState = persistence.load("chaos-resume");
         assertNotNull(freshState);
-        assertEquals(7, freshState.getMessages().size(),
+        assertEquals(
+                7,
+                freshState.getMessages().size(),
                 "After writes resume, the next successful write should capture full state");
 
         // Verify all messages are present
-        Set<String> ids = freshState.getMessages().stream()
-                .map(QueueStatePersistence.MessageEntry::getId)
-                .collect(Collectors.toSet());
+        Set<String> ids =
+                freshState.getMessages().stream()
+                        .map(QueueStatePersistence.MessageEntry::getId)
+                        .collect(Collectors.toSet());
         for (int i = 0; i < 3; i++) {
             assertTrue(ids.contains("initial-" + i));
             assertTrue(ids.contains("failed-" + i));
@@ -264,7 +273,8 @@ public class QueueChaosTest {
     @Test
     public void testIntermittentWriteFailures() {
         ChaosQueueStatePersistence persistence = new ChaosQueueStatePersistence(tempDir);
-        ConductorInMemoryQueue queue = new ConductorInMemoryQueue("chaos-intermittent", persistence);
+        ConductorInMemoryQueue queue =
+                new ConductorInMemoryQueue("chaos-intermittent", persistence);
 
         // Fail every 3rd write
         persistence.setFailEveryNthWrite(3);
@@ -288,7 +298,9 @@ public class QueueChaosTest {
 
         // The last write (msg-9) was write #10, which is NOT a multiple of 3, so it succeeded.
         // That write captures all 10 messages.
-        assertEquals(10, state.getMessages().size(),
+        assertEquals(
+                10,
+                state.getMessages().size(),
                 "Last write succeeded and should capture full state");
 
         persistence.shutdown();
@@ -322,7 +334,8 @@ public class QueueChaosTest {
         QueueStatePersistence persistence = new QueueStatePersistence(tempDir);
 
         // Write a valid start but truncated JSON
-        String truncated = "{\"queueName\":\"truncated-q\",\"queueUnackTime\":30000,\"messages\":[{\"id\":\"m1\"";
+        String truncated =
+                "{\"queueName\":\"truncated-q\",\"queueUnackTime\":30000,\"messages\":[{\"id\":\"m1\"";
         Path truncatedFile = tempDir.resolve("truncated-q.json");
         Files.write(truncatedFile, truncated.getBytes(StandardCharsets.UTF_8));
 
@@ -415,8 +428,7 @@ public class QueueChaosTest {
     // -----------------------------------------------------------------------
 
     @Test
-    public void testConcurrentOperationsWithIntermittentFailures()
-            throws InterruptedException {
+    public void testConcurrentOperationsWithIntermittentFailures() throws InterruptedException {
         ChaosQueueStatePersistence persistence = new ChaosQueueStatePersistence(tempDir);
         ConductorInMemoryQueue queue = new ConductorInMemoryQueue("chaos-concurrent", persistence);
 
@@ -430,14 +442,16 @@ public class QueueChaosTest {
         // Push 100 messages concurrently
         for (int i = 0; i < messageCount; i++) {
             final int idx = i;
-            executor.submit(() -> {
-                try {
-                    queue.push(Arrays.asList(
-                            new QueueMessage("concurrent-" + idx, "data-" + idx)));
-                } finally {
-                    pushLatch.countDown();
-                }
-            });
+            executor.submit(
+                    () -> {
+                        try {
+                            queue.push(
+                                    Arrays.asList(
+                                            new QueueMessage("concurrent-" + idx, "data-" + idx)));
+                        } finally {
+                            pushLatch.countDown();
+                        }
+                    });
         }
         assertTrue(pushLatch.await(10, TimeUnit.SECONDS), "Pushes should complete in time");
 
@@ -453,9 +467,8 @@ public class QueueChaosTest {
         }
         assertEquals(messageCount, allPopped.size());
 
-        Set<String> uniqueIds = allPopped.stream()
-                .map(QueueMessage::getId)
-                .collect(Collectors.toSet());
+        Set<String> uniqueIds =
+                allPopped.stream().map(QueueMessage::getId).collect(Collectors.toSet());
         assertEquals(messageCount, uniqueIds.size(), "No duplicates in popped messages");
 
         // Some writes failed
@@ -519,7 +532,8 @@ public class QueueChaosTest {
         // Step 2: Pop 2 messages (disk works — re-scored to future)
         List<QueueMessage> popped = queue.pop(2, 0, TimeUnit.MILLISECONDS);
         assertEquals(2, popped.size());
-        Set<String> poppedIds = popped.stream().map(QueueMessage::getId).collect(Collectors.toSet());
+        Set<String> poppedIds =
+                popped.stream().map(QueueMessage::getId).collect(Collectors.toSet());
 
         // Step 3: Disk fails — ack the 2 popped messages
         persistence.setFailWrites(true);
@@ -529,9 +543,10 @@ public class QueueChaosTest {
         assertEquals(3, queue.size()); // in-memory: 5 - 2 acked = 3
 
         // Step 4: Disk fails — push 2 new messages
-        queue.push(Arrays.asList(
-                new QueueMessage("new-0", "newdata-0"),
-                new QueueMessage("new-1", "newdata-1")));
+        queue.push(
+                Arrays.asList(
+                        new QueueMessage("new-0", "newdata-0"),
+                        new QueueMessage("new-1", "newdata-1")));
         assertEquals(5, queue.size()); // in-memory: 3 + 2 = 5
 
         // Disk state still has the state from step 2 (5 messages, 2 re-scored)
@@ -549,11 +564,13 @@ public class QueueChaosTest {
         assertEquals(6, finalState.getMessages().size());
 
         // Verify the acked messages are NOT on disk
-        Set<String> diskIds = finalState.getMessages().stream()
-                .map(QueueStatePersistence.MessageEntry::getId)
-                .collect(Collectors.toSet());
+        Set<String> diskIds =
+                finalState.getMessages().stream()
+                        .map(QueueStatePersistence.MessageEntry::getId)
+                        .collect(Collectors.toSet());
         for (String ackedId : poppedIds) {
-            assertFalse(diskIds.contains(ackedId),
+            assertFalse(
+                    diskIds.contains(ackedId),
                     "Acked message " + ackedId + " should not be on disk after successful write");
         }
         assertTrue(diskIds.contains("new-0"));
@@ -612,15 +629,22 @@ public class QueueChaosTest {
         QueueStatePersistence persistence = new QueueStatePersistence(tempDir);
 
         // Write valid state for two queues
-        persistence.persistNow("good-queue-1",
-                new QueueStatePersistence.QueueState("good-queue-1", 1000,
+        persistence.persistNow(
+                "good-queue-1",
+                new QueueStatePersistence.QueueState(
+                        "good-queue-1",
+                        1000,
                         Arrays.asList(new QueueStatePersistence.MessageEntry("g1", 1.0, "p1"))));
-        persistence.persistNow("good-queue-2",
-                new QueueStatePersistence.QueueState("good-queue-2", 2000,
+        persistence.persistNow(
+                "good-queue-2",
+                new QueueStatePersistence.QueueState(
+                        "good-queue-2",
+                        2000,
                         Arrays.asList(new QueueStatePersistence.MessageEntry("g2", 2.0, "p2"))));
 
         // Write corrupted file
-        Files.write(tempDir.resolve("bad-queue.json"),
+        Files.write(
+                tempDir.resolve("bad-queue.json"),
                 "NOT JSON AT ALL".getBytes(StandardCharsets.UTF_8));
 
         // Write empty file

@@ -65,14 +65,18 @@ public class QueueStatePersistenceTest {
     public void testLoadAll() {
         QueueStatePersistence persistence = new QueueStatePersistence(tempDir);
 
-        persistence.writeSync("queue-a",
-                new QueueStatePersistence.QueueState("queue-a", 1000,
-                        Arrays.asList(
-                                new QueueStatePersistence.MessageEntry("a1", 1.0, "pa"))));
-        persistence.writeSync("queue-b",
-                new QueueStatePersistence.QueueState("queue-b", 2000,
-                        Arrays.asList(
-                                new QueueStatePersistence.MessageEntry("b1", 2.0, "pb"))));
+        persistence.writeSync(
+                "queue-a",
+                new QueueStatePersistence.QueueState(
+                        "queue-a",
+                        1000,
+                        Arrays.asList(new QueueStatePersistence.MessageEntry("a1", 1.0, "pa"))));
+        persistence.writeSync(
+                "queue-b",
+                new QueueStatePersistence.QueueState(
+                        "queue-b",
+                        2000,
+                        Arrays.asList(new QueueStatePersistence.MessageEntry("b1", 2.0, "pb"))));
 
         Map<String, QueueStatePersistence.QueueState> all = persistence.loadAll();
         assertEquals(2, all.size());
@@ -88,9 +92,10 @@ public class QueueStatePersistenceTest {
         QueueStatePersistence persistence = new QueueStatePersistence(tempDir);
 
         QueueStatePersistence.QueueState state =
-                new QueueStatePersistence.QueueState("sync-queue", 5000,
-                        Arrays.asList(
-                                new QueueStatePersistence.MessageEntry("m1", 42.0, "p1")));
+                new QueueStatePersistence.QueueState(
+                        "sync-queue",
+                        5000,
+                        Arrays.asList(new QueueStatePersistence.MessageEntry("m1", 42.0, "p1")));
         persistence.persistNow("sync-queue", state);
 
         // No sleep needed — persistNow is synchronous
@@ -141,7 +146,8 @@ public class QueueStatePersistenceTest {
     public void testDeleteQueueState() {
         QueueStatePersistence persistence = new QueueStatePersistence(tempDir);
 
-        persistence.writeSync("delete-me",
+        persistence.writeSync(
+                "delete-me",
                 new QueueStatePersistence.QueueState("delete-me", 1000, Arrays.asList()));
 
         assertNotNull(persistence.load("delete-me"));
@@ -186,7 +192,8 @@ public class QueueStatePersistenceTest {
         assertNotNull(loaded, "State must be on disk immediately after pop");
         assertEquals(1, loaded.getMessages().size());
         // The score should now be in the future (now + queueUnackTime)
-        assertTrue(loaded.getMessages().get(0).getScore() > System.currentTimeMillis() - 1000,
+        assertTrue(
+                loaded.getMessages().get(0).getScore() > System.currentTimeMillis() - 1000,
                 "Score should have been updated by pop");
 
         persistence.shutdown();
@@ -205,7 +212,9 @@ public class QueueStatePersistenceTest {
 
         QueueStatePersistence.QueueState loaded = persistence.load("durable-ack");
         assertNotNull(loaded);
-        assertEquals(0, loaded.getMessages().size(),
+        assertEquals(
+                0,
+                loaded.getMessages().size(),
                 "Acked message must be removed from disk immediately");
 
         persistence.shutdown();
@@ -224,7 +233,8 @@ public class QueueStatePersistenceTest {
         QueueStatePersistence.QueueState loaded = persistence.load("durable-timeout");
         assertNotNull(loaded);
         assertEquals(1, loaded.getMessages().size());
-        assertTrue(loaded.getMessages().get(0).getScore() > System.currentTimeMillis() + 50_000,
+        assertTrue(
+                loaded.getMessages().get(0).getScore() > System.currentTimeMillis() + 50_000,
                 "Score should reflect updated unack timeout on disk");
 
         persistence.shutdown();

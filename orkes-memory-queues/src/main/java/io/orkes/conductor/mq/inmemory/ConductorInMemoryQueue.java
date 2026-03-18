@@ -30,8 +30,8 @@ import lombok.extern.slf4j.Slf4j;
 /**
  * In-memory implementation of {@link ConductorQueue} backed by a {@link ConcurrentSkipListSet}
  * (replacing Redis ZSET) and {@link ConcurrentHashMap} maps (replacing Redis Hash). Supports
- * durable disk persistence via either a {@link WriteAheadLog} (fast, O(1) appends) or
- * a legacy {@link QueueStatePersistence} (full snapshot per mutation).
+ * durable disk persistence via either a {@link WriteAheadLog} (fast, O(1) appends) or a legacy
+ * {@link QueueStatePersistence} (full snapshot per mutation).
  */
 @Slf4j
 public class ConductorInMemoryQueue implements ConductorQueue {
@@ -103,8 +103,7 @@ public class ConductorInMemoryQueue implements ConductorQueue {
                 }
             }
         }
-        log.info("Hydrated queue {} with {} messages from disk", queueName,
-                scoreIndex.size());
+        log.info("Hydrated queue {} with {} messages from disk", queueName, scoreIndex.size());
     }
 
     @Override
@@ -161,8 +160,9 @@ public class ConductorInMemoryQueue implements ConductorQueue {
                 int priority = (int) ((sm.getScore() % 1.0) * 100);
 
                 String payload = payloads.get(sm.getMessageId());
-                QueueMessage msg = new QueueMessage(
-                        sm.getMessageId(), payload, (long) sm.getScore(), priority);
+                QueueMessage msg =
+                        new QueueMessage(
+                                sm.getMessageId(), payload, (long) sm.getScore(), priority);
                 result.add(msg);
             }
 
@@ -316,15 +316,14 @@ public class ConductorInMemoryQueue implements ConductorQueue {
         List<QueueStatePersistence.MessageEntry> entries = new ArrayList<>();
         for (ScoredMessage sm : sortedMessages) {
             String payload = payloads.get(sm.getMessageId());
-            entries.add(new QueueStatePersistence.MessageEntry(
-                    sm.getMessageId(), sm.getScore(), payload));
+            entries.add(
+                    new QueueStatePersistence.MessageEntry(
+                            sm.getMessageId(), sm.getScore(), payload));
         }
         return new QueueStatePersistence.QueueState(queueName, queueUnackTime, entries);
     }
 
-    /**
-     * Synchronously persist the current queue state to disk (legacy full-snapshot path).
-     */
+    /** Synchronously persist the current queue state to disk (legacy full-snapshot path). */
     private void notifyPersistence() {
         if (persistence != null) {
             persistence.persistNow(queueName, snapshot());

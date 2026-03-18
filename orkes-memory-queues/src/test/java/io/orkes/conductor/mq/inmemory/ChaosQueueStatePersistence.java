@@ -17,8 +17,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Test helper that extends {@link QueueStatePersistence} with injectable failure modes.
- * Use this to simulate disk I/O failures, intermittent faults, and write latency in tests.
+ * Test helper that extends {@link QueueStatePersistence} with injectable failure modes. Use this to
+ * simulate disk I/O failures, intermittent faults, and write latency in tests.
  */
 public class ChaosQueueStatePersistence extends QueueStatePersistence {
 
@@ -57,7 +57,9 @@ public class ChaosQueueStatePersistence extends QueueStatePersistence {
         super.delete(queueName);
     }
 
-    /** Enable or disable write failures. When enabled, all persistNow calls are silently dropped. */
+    /**
+     * Enable or disable write failures. When enabled, all persistNow calls are silently dropped.
+     */
     public void setFailWrites(boolean fail) {
         failWrites.set(fail);
     }
@@ -68,8 +70,8 @@ public class ChaosQueueStatePersistence extends QueueStatePersistence {
     }
 
     /**
-     * Fail every Nth write. Set to 0 to disable. For example, failEveryNthWrite=3 means
-     * writes 3, 6, 9, ... will fail while others succeed.
+     * Fail every Nth write. Set to 0 to disable. For example, failEveryNthWrite=3 means writes 3,
+     * 6, 9, ... will fail while others succeed.
      */
     public void setFailEveryNthWrite(int n) {
         this.failEveryNthWrite = n;

@@ -13,7 +13,6 @@
 package io.orkes.conductor.queue.dao;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 
 import org.junit.jupiter.api.BeforeAll;

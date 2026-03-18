@@ -15,8 +15,8 @@ package io.orkes.conductor.mq.inmemory;
 import java.util.Objects;
 
 /**
- * A message entry in the sorted set, ordered by score (ascending) then messageId for
- * deterministic tie-breaking. Mirrors the behavior of a Redis ZSET member+score pair.
+ * A message entry in the sorted set, ordered by score (ascending) then messageId for deterministic
+ * tie-breaking. Mirrors the behavior of a Redis ZSET member+score pair.
  */
 public class ScoredMessage implements Comparable<ScoredMessage> {
 
@@ -50,8 +50,7 @@ public class ScoredMessage implements Comparable<ScoredMessage> {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
         ScoredMessage that = (ScoredMessage) o;
-        return Double.compare(that.score, score) == 0
-                && Objects.equals(messageId, that.messageId);
+        return Double.compare(that.score, score) == 0 && Objects.equals(messageId, that.messageId);
     }
 
     @Override

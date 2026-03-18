@@ -1,0 +1,15 @@
+dependencies {
+
+    //Guava
+    implementation "com.google.guava:guava:${versions.revGuava}"
+
+    // Jackson for WAL and snapshot persistence
+    implementation 'com.fasterxml.jackson.core:jackson-databind'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.7.0'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.7.0'
+}
+
+test {
+    useJUnitPlatform()
+}

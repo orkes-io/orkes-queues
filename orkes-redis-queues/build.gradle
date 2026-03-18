@@ -1,13 +1,12 @@
 dependencies {
 
+    implementation project(":orkes-memory-queues")
+
     implementation "redis.clients:jedis:${versions.revJedis}"
     implementation 'org.springframework.boot:spring-boot-starter'
 
     //Guava
     implementation "com.google.guava:guava:${versions.revGuava}"
-
-    // Jackson for in-memory queue persistence
-    implementation 'com.fasterxml.jackson.core:jackson-databind'
 
     testImplementation "junit:junit:4.11"
     testImplementation 'org.junit.jupiter:junit-jupiter-api:5.7.0'

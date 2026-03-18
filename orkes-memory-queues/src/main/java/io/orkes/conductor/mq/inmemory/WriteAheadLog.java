@@ -27,19 +27,19 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
-
 import lombok.extern.slf4j.Slf4j;
 
 /**
  * Append-only write-ahead log for durable queue persistence with O(1) per-operation cost.
- * <p>
- * Instead of rewriting the full queue state on every mutation, each operation appends a small
+ *
+ * <p>Instead of rewriting the full queue state on every mutation, each operation appends a small
  * delta record to a log file. Periodic compaction rewrites the full snapshot and truncates the log.
- * <p>
- * File layout per queue:
+ *
+ * <p>File layout per queue:
+ *
  * <ul>
- *   <li>{queue}.json — latest compacted snapshot</li>
- *   <li>{queue}.wal — append-only log of operations since last snapshot</li>
+ *   <li>{queue}.json — latest compacted snapshot
+ *   <li>{queue}.wal — append-only log of operations since last snapshot
  * </ul>
  */
 @Slf4j
@@ -70,9 +70,9 @@ public class WriteAheadLog {
     }
 
     /**
-     * Append a single WAL entry. This is an O(1) operation — only the delta is written.
-     * Uses a persistent buffered stream per queue to avoid open/close overhead.
-     * Returns the number of entries in the WAL (for compaction decisions).
+     * Append a single WAL entry. This is an O(1) operation — only the delta is written. Uses a
+     * persistent buffered stream per queue to avoid open/close overhead. Returns the number of
+     * entries in the WAL (for compaction decisions).
      */
     public int appendEntry(String queueName, WalEntry entry) {
         try {
@@ -95,7 +95,8 @@ public class WriteAheadLog {
      * Returns the updated entry count.
      */
     public int appendEntries(String queueName, List<WalEntry> entries) {
-        if (entries.isEmpty()) return walCounters.computeIfAbsent(queueName, k -> new AtomicInteger(0)).get();
+        if (entries.isEmpty())
+            return walCounters.computeIfAbsent(queueName, k -> new AtomicInteger(0)).get();
         try {
             OutputStream os = getOrCreateStream(queueName);
             synchronized (os) {
@@ -110,15 +111,20 @@ public class WriteAheadLog {
             log.error("Failed to append WAL entries for queue {}", queueName, e);
             closeStream(queueName);
         }
-        return walCounters.computeIfAbsent(queueName, k -> new AtomicInteger(0)).addAndGet(entries.size());
+        return walCounters
+                .computeIfAbsent(queueName, k -> new AtomicInteger(0))
+                .addAndGet(entries.size());
     }
 
     private OutputStream getOrCreateStream(String queueName) throws IOException {
         OutputStream existing = walStreams.get(queueName);
         if (existing != null) return existing;
         Path walFile = walPath(queueName);
-        OutputStream newStream = new BufferedOutputStream(
-                Files.newOutputStream(walFile, StandardOpenOption.CREATE, StandardOpenOption.APPEND), 8192);
+        OutputStream newStream =
+                new BufferedOutputStream(
+                        Files.newOutputStream(
+                                walFile, StandardOpenOption.CREATE, StandardOpenOption.APPEND),
+                        8192);
         OutputStream prev = walStreams.putIfAbsent(queueName, newStream);
         if (prev != null) {
             newStream.close();
@@ -130,13 +136,14 @@ public class WriteAheadLog {
     private void closeStream(String queueName) {
         OutputStream os = walStreams.remove(queueName);
         if (os != null) {
-            try { os.close(); } catch (IOException ignored) {}
+            try {
+                os.close();
+            } catch (IOException ignored) {
+            }
         }
     }
 
-    /**
-     * Write a full snapshot and clear the WAL. Called during compaction.
-     */
+    /** Write a full snapshot and clear the WAL. Called during compaction. */
     public void compact(String queueName, QueueStatePersistence.QueueState state) {
         writeSnapshot(queueName, state);
         // Close stream, truncate WAL, and reset counter
@@ -149,9 +156,7 @@ public class WriteAheadLog {
         walCounters.computeIfAbsent(queueName, k -> new AtomicInteger(0)).set(0);
     }
 
-    /**
-     * Load a queue's state by reading the snapshot and replaying the WAL on top of it.
-     */
+    /** Load a queue's state by reading the snapshot and replaying the WAL on top of it. */
     public QueueStatePersistence.QueueState load(String queueName) {
         QueueStatePersistence.QueueState state = loadSnapshot(queueName);
         List<WalEntry> entries = loadWalEntries(queueName);
@@ -164,9 +169,7 @@ public class WriteAheadLog {
         return replay(state, entries);
     }
 
-    /**
-     * Load all queues by scanning for snapshot files and WAL files.
-     */
+    /** Load all queues by scanning for snapshot files and WAL files. */
     public java.util.Map<String, QueueStatePersistence.QueueState> loadAll() {
         java.util.Map<String, QueueStatePersistence.QueueState> states = new java.util.HashMap<>();
         // Collect all queue names from both .json and .wal files
@@ -190,7 +193,9 @@ public class WriteAheadLog {
                 state = replay(snapshot, entries);
             } else if (!entries.isEmpty()) {
                 // Try to get the queue name from the first entry
-                state = new QueueStatePersistence.QueueState(sanitizedName, 30_000, new ArrayList<>());
+                state =
+                        new QueueStatePersistence.QueueState(
+                                sanitizedName, 30_000, new ArrayList<>());
                 state = replay(state, entries);
             } else {
                 continue;
@@ -227,11 +232,17 @@ public class WriteAheadLog {
         try {
             byte[] data = objectMapper.writeValueAsBytes(state);
             Files.write(tmpFile, data);
-            Files.move(tmpFile, targetFile, StandardCopyOption.ATOMIC_MOVE,
+            Files.move(
+                    tmpFile,
+                    targetFile,
+                    StandardCopyOption.ATOMIC_MOVE,
                     StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
             log.error("Failed to write snapshot for queue {}", queueName, e);
-            try { Files.deleteIfExists(tmpFile); } catch (IOException ignored) {}
+            try {
+                Files.deleteIfExists(tmpFile);
+            } catch (IOException ignored) {
+            }
         }
     }
 
@@ -292,7 +303,8 @@ public class WriteAheadLog {
         if (entries.isEmpty()) return state;
 
         // Build mutable index from snapshot
-        java.util.Map<String, QueueStatePersistence.MessageEntry> index = new java.util.LinkedHashMap<>();
+        java.util.Map<String, QueueStatePersistence.MessageEntry> index =
+                new java.util.LinkedHashMap<>();
         if (state.getMessages() != null) {
             for (QueueStatePersistence.MessageEntry me : state.getMessages()) {
                 index.put(me.getId(), me);
@@ -302,14 +314,18 @@ public class WriteAheadLog {
         for (WalEntry entry : entries) {
             switch (entry.getOp()) {
                 case PUSH:
-                    index.put(entry.getId(),
-                            new QueueStatePersistence.MessageEntry(entry.getId(), entry.getScore(), entry.getPayload()));
+                    index.put(
+                            entry.getId(),
+                            new QueueStatePersistence.MessageEntry(
+                                    entry.getId(), entry.getScore(), entry.getPayload()));
                     break;
                 case RESCORE:
                     QueueStatePersistence.MessageEntry existing = index.get(entry.getId());
                     if (existing != null) {
-                        index.put(entry.getId(),
-                                new QueueStatePersistence.MessageEntry(entry.getId(), entry.getScore(), existing.getPayload()));
+                        index.put(
+                                entry.getId(),
+                                new QueueStatePersistence.MessageEntry(
+                                        entry.getId(), entry.getScore(), existing.getPayload()));
                     }
                     break;
                 case REMOVE:
@@ -371,19 +387,52 @@ public class WriteAheadLog {
             return new WalEntry(Op.FLUSH, null, 0, null);
         }
 
-        public Op getOp() { return op; }
-        public void setOp(Op op) { this.op = op; }
-        public String getId() { return id; }
-        public void setId(String id) { this.id = id; }
-        public double getScore() { return score; }
-        public void setScore(double score) { this.score = score; }
-        public String getPayload() { return payload; }
-        public void setPayload(String payload) { this.payload = payload; }
-        public int getQueueUnackTime() { return queueUnackTime; }
-        public void setQueueUnackTime(int queueUnackTime) { this.queueUnackTime = queueUnackTime; }
+        public Op getOp() {
+            return op;
+        }
+
+        public void setOp(Op op) {
+            this.op = op;
+        }
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(String id) {
+            this.id = id;
+        }
+
+        public double getScore() {
+            return score;
+        }
+
+        public void setScore(double score) {
+            this.score = score;
+        }
+
+        public String getPayload() {
+            return payload;
+        }
+
+        public void setPayload(String payload) {
+            this.payload = payload;
+        }
+
+        public int getQueueUnackTime() {
+            return queueUnackTime;
+        }
+
+        public void setQueueUnackTime(int queueUnackTime) {
+            this.queueUnackTime = queueUnackTime;
+        }
     }
 
     public enum Op {
-        PUSH, RESCORE, REMOVE, FLUSH, SET_UNACK_TIME
+        PUSH,
+        RESCORE,
+        REMOVE,
+        FLUSH,
+        SET_UNACK_TIME
     }
 }

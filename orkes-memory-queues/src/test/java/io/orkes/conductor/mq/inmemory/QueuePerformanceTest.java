@@ -15,22 +15,17 @@ package io.orkes.conductor.mq.inmemory;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.atomic.AtomicLong;
 
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
 
 import io.orkes.conductor.mq.QueueMessage;
 
-/**
- * Performance benchmarks comparing snapshot-based persistence vs WAL-based persistence.
- */
+/** Performance benchmarks comparing snapshot-based persistence vs WAL-based persistence. */
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 public class QueuePerformanceTest {
 
-    @TempDir
-    Path tempDir;
+    @TempDir Path tempDir;
 
     // ── Snapshot-based benchmarks (baseline) ────────────────────────────
 
@@ -119,7 +114,8 @@ public class QueuePerformanceTest {
     @Test
     @Order(5)
     void benchSnapshotPushPopAckCycle() {
-        QueueStatePersistence persistence = new QueueStatePersistence(tempDir.resolve("snap-cycle"));
+        QueueStatePersistence persistence =
+                new QueueStatePersistence(tempDir.resolve("snap-cycle"));
         ConductorInMemoryQueue queue = new ConductorInMemoryQueue("bench", persistence);
         queue.setQueueUnackTime(60_000);
 
@@ -160,7 +156,8 @@ public class QueuePerformanceTest {
     @Test
     @Order(7)
     void benchSnapshotLargeQueuePush() {
-        QueueStatePersistence persistence = new QueueStatePersistence(tempDir.resolve("snap-large"));
+        QueueStatePersistence persistence =
+                new QueueStatePersistence(tempDir.resolve("snap-large"));
         ConductorInMemoryQueue queue = new ConductorInMemoryQueue("bench", persistence);
         queue.setQueueUnackTime(60_000);
 
@@ -207,7 +204,8 @@ public class QueuePerformanceTest {
     @Test
     @Order(9)
     void benchSnapshotBatchPush() {
-        QueueStatePersistence persistence = new QueueStatePersistence(tempDir.resolve("snap-batch"));
+        QueueStatePersistence persistence =
+                new QueueStatePersistence(tempDir.resolve("snap-batch"));
         ConductorInMemoryQueue queue = new ConductorInMemoryQueue("bench", persistence);
         queue.setQueueUnackTime(60_000);
 
@@ -227,7 +225,8 @@ public class QueuePerformanceTest {
         persistence.shutdown();
 
         double opsPerSec = totalMessages / (elapsed / 1_000_000_000.0);
-        System.out.printf("[PERF] Snapshot Batch Push (size=%d): %.0f msgs/sec%n", batchSize, opsPerSec);
+        System.out.printf(
+                "[PERF] Snapshot Batch Push (size=%d): %.0f msgs/sec%n", batchSize, opsPerSec);
     }
 
     @Test
@@ -289,7 +288,8 @@ public class QueuePerformanceTest {
     @Test
     @Order(13)
     void benchNoPersistencePush() {
-        ConductorInMemoryQueue queue = new ConductorInMemoryQueue("bench", (QueueStatePersistence) null);
+        ConductorInMemoryQueue queue =
+                new ConductorInMemoryQueue("bench", (QueueStatePersistence) null);
         queue.setQueueUnackTime(60_000);
 
         int count = 5_000;
@@ -326,7 +326,8 @@ public class QueuePerformanceTest {
         long elapsed = System.nanoTime() - start;
 
         double avgUs = (elapsed / 1_000.0);
-        System.out.printf("[PERF] WAL Recovery (5000 entries): %.1f µs, %d messages recovered%n",
+        System.out.printf(
+                "[PERF] WAL Recovery (5000 entries): %.1f µs, %d messages recovered%n",
                 avgUs, recovered != null ? recovered.getMessages().size() : 0);
     }
 
@@ -361,19 +362,31 @@ public class QueuePerformanceTest {
         return ids;
     }
 
-    private long runConcurrentPush(ConductorInMemoryQueue queue, int threads, int perThread) throws Exception {
+    private long runConcurrentPush(ConductorInMemoryQueue queue, int threads, int perThread)
+            throws Exception {
         ExecutorService pool = Executors.newFixedThreadPool(threads);
         CountDownLatch latch = new CountDownLatch(1);
 
         List<Future<?>> futures = new ArrayList<>();
         for (int t = 0; t < threads; t++) {
             final int threadId = t;
-            futures.add(pool.submit(() -> {
-                try { latch.await(); } catch (InterruptedException e) { return; }
-                for (int i = 0; i < perThread; i++) {
-                    queue.push(List.of(new QueueMessage("t" + threadId + "-" + i, "payload", 0)));
-                }
-            }));
+            futures.add(
+                    pool.submit(
+                            () -> {
+                                try {
+                                    latch.await();
+                                } catch (InterruptedException e) {
+                                    return;
+                                }
+                                for (int i = 0; i < perThread; i++) {
+                                    queue.push(
+                                            List.of(
+                                                    new QueueMessage(
+                                                            "t" + threadId + "-" + i,
+                                                            "payload",
+                                                            0)));
+                                }
+                            }));
         }
 
         long start = System.nanoTime();
@@ -387,7 +400,8 @@ public class QueuePerformanceTest {
     private void printResult(String label, int count, long elapsedNs) {
         double opsPerSec = count / (elapsedNs / 1_000_000_000.0);
         double avgLatencyUs = (elapsedNs / 1_000.0) / count;
-        System.out.printf("[PERF] %s: %.0f ops/sec, avg %.1f µs (%d ops)%n",
+        System.out.printf(
+                "[PERF] %s: %.0f ops/sec, avg %.1f µs (%d ops)%n",
                 label, opsPerSec, avgLatencyUs, count);
     }
 }

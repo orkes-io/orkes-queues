@@ -12,7 +12,6 @@
  */
 package io.orkes.conductor.queue.config;
 
-import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.HashSet;
 import java.util.List;
@@ -82,10 +81,8 @@ public class RedisQueueConfiguration {
     @Primary
     @ConditionalOnProperty(name = "conductor.queue.type", havingValue = "memory")
     public QueueDAO getQueueDAOInMemory(
-            QueueRedisProperties queueRedisProperties,
-            ConductorProperties properties) {
-        String dataDir =
-                System.getProperty("conductor.queue.inmemory.dataDir", "./data/queues");
+            QueueRedisProperties queueRedisProperties, ConductorProperties properties) {
+        String dataDir = System.getProperty("conductor.queue.inmemory.dataDir", "./data/queues");
         log.info("getQueueDAOInMemory init with dataDir={}", dataDir);
         return new InMemoryQueueDAO(queueRedisProperties, properties, Paths.get(dataDir));
     }

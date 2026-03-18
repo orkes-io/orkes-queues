@@ -13,7 +13,6 @@
 package io.orkes.conductor.mq.inmemory;
 
 import java.io.*;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -24,17 +23,15 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
 import lombok.extern.slf4j.Slf4j;
 
 /**
  * Disk persistence for in-memory queues. Supports two modes:
  *
  * <ul>
- *   <li><b>Synchronous</b> ({@link #persistNow}) — blocks the caller until the state is durable
- *       on disk. Use this for push, pop, ack, and any mutation where durability is required.
+ *   <li><b>Synchronous</b> ({@link #persistNow}) — blocks the caller until the state is durable on
+ *       disk. Use this for push, pop, ack, and any mutation where durability is required.
  *   <li><b>Asynchronous</b> ({@link #markDirty}) — coalesced, fire-and-forget writes on a
  *       background thread. Suitable only for best-effort / non-critical persistence.
  * </ul>
@@ -52,11 +49,13 @@ public class QueueStatePersistence {
     public QueueStatePersistence(Path dataDir) {
         this.dataDir = dataDir;
         this.objectMapper = new ObjectMapper();
-        this.executor = Executors.newSingleThreadExecutor(r -> {
-            Thread t = new Thread(r, "queue-persistence");
-            t.setDaemon(true);
-            return t;
-        });
+        this.executor =
+                Executors.newSingleThreadExecutor(
+                        r -> {
+                            Thread t = new Thread(r, "queue-persistence");
+                            t.setDaemon(true);
+                            return t;
+                        });
         try {
             Files.createDirectories(dataDir);
         } catch (IOException e) {
@@ -65,8 +64,8 @@ public class QueueStatePersistence {
     }
 
     /**
-     * Synchronously persist the queue state to disk. Blocks until the write is durable.
-     * This is the preferred method for all mutating operations where durability is critical.
+     * Synchronously persist the queue state to disk. Blocks until the write is durable. This is the
+     * preferred method for all mutating operations where durability is critical.
      */
     public void persistNow(String queueName, QueueState state) {
         writeToFile(queueName, state);
@@ -76,20 +75,21 @@ public class QueueStatePersistence {
      * Mark a queue as dirty. The state supplier will be called on the persistence thread to get a
      * point-in-time snapshot. Writes are coalesced — only one write per queue can be pending.
      *
-     * <p><b>Warning</b>: This is best-effort async persistence. For durable writes, use
-     * {@link #persistNow} instead.
+     * <p><b>Warning</b>: This is best-effort async persistence. For durable writes, use {@link
+     * #persistNow} instead.
      */
     public void markDirty(String queueName, Supplier<QueueState> stateSupplier) {
         if (pendingWrites.add(queueName)) {
-            executor.submit(() -> {
-                try {
-                    pendingWrites.remove(queueName);
-                    QueueState state = stateSupplier.get();
-                    writeToFile(queueName, state);
-                } catch (Exception e) {
-                    log.error("Failed to persist queue {}", queueName, e);
-                }
-            });
+            executor.submit(
+                    () -> {
+                        try {
+                            pendingWrites.remove(queueName);
+                            QueueState state = stateSupplier.get();
+                            writeToFile(queueName, state);
+                        } catch (Exception e) {
+                            log.error("Failed to persist queue {}", queueName, e);
+                        }
+                    });
         }
     }
 
@@ -159,7 +159,10 @@ public class QueueStatePersistence {
         try {
             byte[] data = objectMapper.writeValueAsBytes(state);
             Files.write(tmpFile, data);
-            Files.move(tmpFile, targetFile, StandardCopyOption.ATOMIC_MOVE,
+            Files.move(
+                    tmpFile,
+                    targetFile,
+                    StandardCopyOption.ATOMIC_MOVE,
                     StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
             log.error("Failed to write queue state to {}", targetFile, e);
