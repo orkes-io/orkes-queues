@@ -30,9 +30,16 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 
 /**
- * Asynchronous disk persistence for in-memory queues. Writes are coalesced — if a write is already
- * pending for a queue, additional markDirty calls are no-ops (the pending write will snapshot
- * current state at execution time). Files are written atomically via tmp+rename.
+ * Disk persistence for in-memory queues. Supports two modes:
+ *
+ * <ul>
+ *   <li><b>Synchronous</b> ({@link #persistNow}) — blocks the caller until the state is durable
+ *       on disk. Use this for push, pop, ack, and any mutation where durability is required.
+ *   <li><b>Asynchronous</b> ({@link #markDirty}) — coalesced, fire-and-forget writes on a
+ *       background thread. Suitable only for best-effort / non-critical persistence.
+ * </ul>
+ *
+ * Files are written atomically via tmp+rename.
  */
 @Slf4j
 public class QueueStatePersistence {
@@ -58,8 +65,19 @@ public class QueueStatePersistence {
     }
 
     /**
+     * Synchronously persist the queue state to disk. Blocks until the write is durable.
+     * This is the preferred method for all mutating operations where durability is critical.
+     */
+    public void persistNow(String queueName, QueueState state) {
+        writeToFile(queueName, state);
+    }
+
+    /**
      * Mark a queue as dirty. The state supplier will be called on the persistence thread to get a
      * point-in-time snapshot. Writes are coalesced — only one write per queue can be pending.
+     *
+     * <p><b>Warning</b>: This is best-effort async persistence. For durable writes, use
+     * {@link #persistNow} instead.
      */
     public void markDirty(String queueName, Supplier<QueueState> stateSupplier) {
         if (pendingWrites.add(queueName)) {
@@ -111,16 +129,14 @@ public class QueueStatePersistence {
         return states;
     }
 
-    /** Remove the persisted state file for a queue. */
+    /** Synchronously remove the persisted state file for a queue. */
     public void delete(String queueName) {
-        executor.submit(() -> {
-            try {
-                Path file = dataDir.resolve(sanitize(queueName) + ".json");
-                Files.deleteIfExists(file);
-            } catch (IOException e) {
-                log.error("Failed to delete queue state file for {}", queueName, e);
-            }
-        });
+        try {
+            Path file = dataDir.resolve(sanitize(queueName) + ".json");
+            Files.deleteIfExists(file);
+        } catch (IOException e) {
+            log.error("Failed to delete queue state file for {}", queueName, e);
+        }
     }
 
     /** Synchronously write state to disk. Used for testing and shutdown. */

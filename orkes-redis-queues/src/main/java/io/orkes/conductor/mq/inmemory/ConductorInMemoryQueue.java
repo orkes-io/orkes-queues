@@ -285,9 +285,13 @@ public class ConductorInMemoryQueue implements ConductorQueue {
         return new QueueStatePersistence.QueueState(queueName, queueUnackTime, entries);
     }
 
+    /**
+     * Synchronously persist the current queue state to disk. Called after every mutation
+     * to guarantee durability — the caller blocks until the write is complete.
+     */
     private void notifyPersistence() {
         if (persistence != null) {
-            persistence.markDirty(queueName, this::snapshot);
+            persistence.persistNow(queueName, snapshot());
         }
     }
 }

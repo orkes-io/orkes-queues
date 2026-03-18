@@ -21,8 +21,6 @@ import org.junit.jupiter.api.io.TempDir;
 
 import io.orkes.conductor.mq.QueueMessage;
 
-import com.google.common.util.concurrent.Uninterruptibles;
-
 import static org.junit.jupiter.api.Assertions.*;
 
 public class QueueStatePersistenceTest {
@@ -86,20 +84,19 @@ public class QueueStatePersistenceTest {
     }
 
     @Test
-    public void testAsyncPersistence() {
+    public void testSyncPersistence() {
         QueueStatePersistence persistence = new QueueStatePersistence(tempDir);
 
-        persistence.markDirty("async-queue", () ->
-                new QueueStatePersistence.QueueState("async-queue", 5000,
+        QueueStatePersistence.QueueState state =
+                new QueueStatePersistence.QueueState("sync-queue", 5000,
                         Arrays.asList(
-                                new QueueStatePersistence.MessageEntry("m1", 42.0, "p1"))));
+                                new QueueStatePersistence.MessageEntry("m1", 42.0, "p1")));
+        persistence.persistNow("sync-queue", state);
 
-        // Wait for async write
-        Uninterruptibles.sleepUninterruptibly(500, TimeUnit.MILLISECONDS);
-
-        QueueStatePersistence.QueueState loaded = persistence.load("async-queue");
+        // No sleep needed — persistNow is synchronous
+        QueueStatePersistence.QueueState loaded = persistence.load("sync-queue");
         assertNotNull(loaded);
-        assertEquals("async-queue", loaded.getQueueName());
+        assertEquals("sync-queue", loaded.getQueueName());
         assertEquals(1, loaded.getMessages().size());
 
         persistence.shutdown();
@@ -111,7 +108,7 @@ public class QueueStatePersistenceTest {
         QueueStatePersistence persistence1 = new QueueStatePersistence(tempDir);
         ConductorInMemoryQueue queue1 = new ConductorInMemoryQueue("recovery-queue", persistence1);
 
-        // Push messages
+        // Push messages — persistence is synchronous, so state is durable immediately
         List<QueueMessage> messages = new ArrayList<>();
         for (int i = 0; i < 5; i++) {
             QueueMessage msg = new QueueMessage("msg-" + i, "payload-" + i);
@@ -121,8 +118,7 @@ public class QueueStatePersistenceTest {
         queue1.push(messages);
         assertEquals(5, queue1.size());
 
-        // Wait for async persist
-        Uninterruptibles.sleepUninterruptibly(500, TimeUnit.MILLISECONDS);
+        // No sleep needed — push persists synchronously
         persistence1.shutdown();
 
         // "Restart": create new persistence and queue, hydrating from disk
@@ -151,10 +147,85 @@ public class QueueStatePersistenceTest {
         assertNotNull(persistence.load("delete-me"));
 
         persistence.delete("delete-me");
-        // Wait for async delete
-        Uninterruptibles.sleepUninterruptibly(500, TimeUnit.MILLISECONDS);
-
+        // No sleep needed — delete is synchronous
         assertNull(persistence.load("delete-me"));
+
+        persistence.shutdown();
+    }
+
+    @Test
+    public void testPushIsDurableImmediately() {
+        QueueStatePersistence persistence = new QueueStatePersistence(tempDir);
+        ConductorInMemoryQueue queue = new ConductorInMemoryQueue("durable-push", persistence);
+
+        // Push a message — should be on disk immediately with no sleep
+        QueueMessage msg = new QueueMessage("d1", "payload-d1");
+        queue.push(Arrays.asList(msg));
+
+        QueueStatePersistence.QueueState loaded = persistence.load("durable-push");
+        assertNotNull(loaded, "State must be on disk immediately after push");
+        assertEquals(1, loaded.getMessages().size());
+        assertEquals("d1", loaded.getMessages().get(0).getId());
+        assertEquals("payload-d1", loaded.getMessages().get(0).getPayload());
+
+        persistence.shutdown();
+    }
+
+    @Test
+    public void testPopUpdateIsDurableImmediately() {
+        QueueStatePersistence persistence = new QueueStatePersistence(tempDir);
+        ConductorInMemoryQueue queue = new ConductorInMemoryQueue("durable-pop", persistence);
+
+        queue.push(Arrays.asList(new QueueMessage("p1", "data")));
+
+        // Pop re-scores the message (makes it invisible) — verify disk state reflects this
+        List<QueueMessage> popped = queue.pop(1, 0, TimeUnit.MILLISECONDS);
+        assertEquals(1, popped.size());
+
+        QueueStatePersistence.QueueState loaded = persistence.load("durable-pop");
+        assertNotNull(loaded, "State must be on disk immediately after pop");
+        assertEquals(1, loaded.getMessages().size());
+        // The score should now be in the future (now + queueUnackTime)
+        assertTrue(loaded.getMessages().get(0).getScore() > System.currentTimeMillis() - 1000,
+                "Score should have been updated by pop");
+
+        persistence.shutdown();
+    }
+
+    @Test
+    public void testAckIsDurableImmediately() {
+        QueueStatePersistence persistence = new QueueStatePersistence(tempDir);
+        ConductorInMemoryQueue queue = new ConductorInMemoryQueue("durable-ack", persistence);
+
+        queue.push(Arrays.asList(new QueueMessage("a1", "data")));
+        queue.pop(1, 0, TimeUnit.MILLISECONDS);
+
+        // Ack removes message — verify disk state is empty
+        queue.ack("a1");
+
+        QueueStatePersistence.QueueState loaded = persistence.load("durable-ack");
+        assertNotNull(loaded);
+        assertEquals(0, loaded.getMessages().size(),
+                "Acked message must be removed from disk immediately");
+
+        persistence.shutdown();
+    }
+
+    @Test
+    public void testSetUnacktimeoutIsDurableImmediately() {
+        QueueStatePersistence persistence = new QueueStatePersistence(tempDir);
+        ConductorInMemoryQueue queue = new ConductorInMemoryQueue("durable-timeout", persistence);
+
+        queue.push(Arrays.asList(new QueueMessage("t1", "data")));
+
+        // Update the unack timeout — verify disk state reflects the new score
+        queue.setUnacktimeout("t1", 60_000);
+
+        QueueStatePersistence.QueueState loaded = persistence.load("durable-timeout");
+        assertNotNull(loaded);
+        assertEquals(1, loaded.getMessages().size());
+        assertTrue(loaded.getMessages().get(0).getScore() > System.currentTimeMillis() + 50_000,
+                "Score should reflect updated unack timeout on disk");
 
         persistence.shutdown();
     }
