@@ -1,11 +1,5 @@
 dependencies {
 
-    //implementation project(':orkes-conductor-redis-configuration')
-    //implementation project(':orkes-conductor-oss-core')
-
-    //Metrics
-    //implementation "io.micrometer:micrometer-core:${versions.revMicrometerVersion}"
-
     implementation "redis.clients:jedis:${versions.revJedis}"
     //Guava
     implementation "com.google.guava:guava:${versions.revGuava}"
