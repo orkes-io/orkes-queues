@@ -1,11 +1,9 @@
 dependencies {
 
     implementation "redis.clients:jedis:${versions.revJedis}"
+
     //Guava
     implementation "com.google.guava:guava:${versions.revGuava}"
-
-    //Caffeine
-    implementation "com.github.ben-manes.caffeine:caffeine"
 
     compileOnly 'org.projectlombok:lombok:1.18.36'
     annotationProcessor 'org.projectlombok:lombok:1.18.36'
