@@ -1,3 +1,2 @@
 rootProject.name = 'orkes-queues'
-include 'orkes-redis-queues'
 include 'orkes-conductor-queues'

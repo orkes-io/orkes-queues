@@ -1,20 +1,24 @@
 dependencies {
 
-    implementation project(":orkes-redis-queues")
-    implementation "com.netflix.conductor:conductor-core:${versions.revConductor}"
-    implementation 'org.springframework.boot:spring-boot-starter'
-    implementation "io.micrometer:micrometer-core:1.7.5"
+    //implementation project(':orkes-conductor-redis-configuration')
+    //implementation project(':orkes-conductor-oss-core')
+
+    //Metrics
+    //implementation "io.micrometer:micrometer-core:${versions.revMicrometerVersion}"
 
     implementation "redis.clients:jedis:${versions.revJedis}"
-    implementation 'org.slf4j:slf4j-api'
-
     //Guava
     implementation "com.google.guava:guava:${versions.revGuava}"
 
-    testImplementation "junit:junit:4.11"
-    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.7.0'
-    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.7.0'
+    //Caffeine
+    implementation "com.github.ben-manes.caffeine:caffeine"
+
+    compileOnly 'org.projectlombok:lombok:1.18.36'
+    annotationProcessor 'org.projectlombok:lombok:1.18.36'
+    testAnnotationProcessor 'org.projectlombok:lombok:1.18.36'
+
     testImplementation "org.testcontainers:testcontainers:1.17.2"
+    testImplementation "org.junit.jupiter:junit-jupiter"
 }
 
 test {
