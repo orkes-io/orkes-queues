@@ -100,6 +100,18 @@ public class ConductorRedisClusterQueue implements ConductorQueue {
     }
 
     @Override
+    public boolean setUnacktimeoutIfShorter(String messageId, long unackTimeout) {
+        double score = clock.millis() + unackTimeout;
+        ZAddParams params =
+                ZAddParams.zAddParams()
+                        .xx() // only update, do NOT add
+                        .lt() // only update if new score is less (sooner delivery)
+                        .ch(); // return modified elements count
+        Long modified = jedis.zadd(queueName, score, messageId, params);
+        return modified != null && modified > 0;
+    }
+
+    @Override
     public boolean exists(String messageId) {
         Double score = jedis.zscore(queueName, messageId);
         if (score != null) {
