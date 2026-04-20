@@ -126,6 +126,70 @@ public abstract class AbstractConductorQueueTest {
         assertFalse(updated);
     }
 
+    /**
+     * When the new timeout would deliver the message sooner than currently scheduled, {@code
+     * setUnacktimeoutIfShorter} must update the score and return {@code true}.
+     */
+    @Test
+    public void testSetUnacktimeoutIfShorterShortensDueTime() {
+        getQueue().flush();
+
+        String id = UUID.randomUUID().toString();
+        QueueMessage msg = new QueueMessage(id, "payload-" + id);
+        msg.setTimeout(5_000); // 5 seconds — well out of reach
+        getQueue().push(Arrays.asList(msg));
+
+        assertNull(popOne()); // not yet available
+
+        // Shorten delivery to 100 ms — score should move forward
+        boolean shortened = getQueue().setUnacktimeoutIfShorter(id, 100);
+        assertTrue(
+                shortened, "setUnacktimeoutIfShorter should return true when it actually shortens");
+
+        Uninterruptibles.sleepUninterruptibly(200, TimeUnit.MILLISECONDS);
+
+        QueueMessage popped = popOne();
+        assertNotNull(popped, "message should be available after the shortened timeout");
+        assertEquals(id, popped.getId());
+    }
+
+    /**
+     * When the new timeout would deliver the message later than currently scheduled, {@code
+     * setUnacktimeoutIfShorter} must leave the score unchanged and return {@code false}.
+     */
+    @Test
+    public void testSetUnacktimeoutIfShorterDoesNotExtend() {
+        getQueue().flush();
+
+        String id = UUID.randomUUID().toString();
+        QueueMessage msg = new QueueMessage(id, "payload-" + id);
+        msg.setTimeout(300); // 300 ms
+        getQueue().push(Arrays.asList(msg));
+
+        // Attempt to push the delivery out to 10 s — must be rejected
+        boolean extended = getQueue().setUnacktimeoutIfShorter(id, 10_000);
+        assertFalse(
+                extended,
+                "setUnacktimeoutIfShorter must not extend an already-closer delivery time");
+
+        assertNull(popOne()); // still not available within the original 300 ms window
+
+        // Original 300 ms elapses — message must appear at its original time, not 10 s later
+        Uninterruptibles.sleepUninterruptibly(400, TimeUnit.MILLISECONDS);
+        QueueMessage popped = popOne();
+        assertNotNull(popped, "message should be available after its original 300 ms timeout");
+        assertEquals(id, popped.getId());
+    }
+
+    /** {@code setUnacktimeoutIfShorter} on a non-existent message must return {@code false}. */
+    @Test
+    public void testSetUnacktimeoutIfShorterForNonExistentMessage() {
+        getQueue().flush();
+        boolean updated =
+                getQueue().setUnacktimeoutIfShorter("nonexistent-" + UUID.randomUUID(), 500);
+        assertFalse(updated);
+    }
+
     @Test
     public void testConcurrency() throws InterruptedException, ExecutionException {
         getQueue().flush();

@@ -68,6 +68,21 @@ public interface ConductorQueue {
     boolean setUnacktimeout(String messageId, long unackTimeout);
 
     /**
+     * Sets the unack timeout for a message only if the new delivery time is sooner than the
+     * currently scheduled one — i.e. never extends the existing timeout. Implementations that
+     * support an atomic "update-if-lower" operation (e.g. {@code ZADD XX LT} in Redis) should
+     * override this method. The default falls back to an unconditional {@link
+     * #setUnacktimeout(String, long)}.
+     *
+     * @param messageId the message id
+     * @param unackTimeout the new unack timeout in milliseconds
+     * @return true if the timeout was updated
+     */
+    default boolean setUnacktimeoutIfShorter(String messageId, long unackTimeout) {
+        return setUnacktimeout(messageId, unackTimeout);
+    }
+
+    /**
      * Checks if a message exists in the queue.
      *
      * @param messageId the message id to check
