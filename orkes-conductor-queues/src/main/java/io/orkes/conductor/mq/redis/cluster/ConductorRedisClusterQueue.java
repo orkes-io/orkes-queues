@@ -70,6 +70,11 @@ public class ConductorRedisClusterQueue implements ConductorQueue {
     }
 
     @Override
+    public List<String> peekFirstIds(int count) {
+        return jedis.zrangeByScore(queueName, 0, Double.POSITIVE_INFINITY, 0, count);
+    }
+
+    @Override
     public boolean ack(String messageId) {
 
         long removed = jedis.zrem(queueName, messageId);
