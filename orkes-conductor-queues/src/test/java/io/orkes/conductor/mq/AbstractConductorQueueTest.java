@@ -501,6 +501,61 @@ public abstract class AbstractConductorQueueTest {
     }
 
     @Test
+    public void testPeekFirstIdsReturnsPostponedMessages() {
+        getQueue().flush();
+
+        String id = "peek-postponed-" + UUID.randomUUID();
+        QueueMessage msg = new QueueMessage(id, "payload");
+        msg.setTimeout(10_000); // far in the future — pop must not see it
+        getQueue().push(Arrays.asList(msg));
+
+        assertNull(popOne(), "pop must not return a postponed message");
+
+        List<String> peeked = getQueue().peekFirstIds(5);
+        assertEquals(1, peeked.size(), "peekFirstIds must surface postponed messages");
+        assertEquals(id, peeked.get(0));
+
+        // peek is non-destructive — message must still be in the queue afterwards
+        assertEquals(1, getQueue().size());
+    }
+
+    @Test
+    public void testPeekFirstIdsReturnsEarliestByScore() {
+        getQueue().flush();
+
+        QueueMessage soon = new QueueMessage("peek-soon-" + UUID.randomUUID(), "soon");
+        soon.setTimeout(500);
+        QueueMessage later = new QueueMessage("peek-later-" + UUID.randomUUID(), "later");
+        later.setTimeout(10_000);
+        // Push later first to confirm the order is by score, not by insertion order
+        getQueue().push(Arrays.asList(later, soon));
+
+        List<String> peeked = getQueue().peekFirstIds(2);
+        assertEquals(2, peeked.size());
+        assertEquals(soon.getId(), peeked.get(0), "earliest deliver-time must come first");
+        assertEquals(later.getId(), peeked.get(1));
+    }
+
+    @Test
+    public void testPeekFirstIdsRespectsCount() {
+        getQueue().flush();
+        for (int i = 0; i < 5; i++) {
+            QueueMessage msg = new QueueMessage("peek-count-" + i, "payload-" + i);
+            msg.setTimeout(10_000);
+            getQueue().push(Arrays.asList(msg));
+        }
+
+        assertEquals(2, getQueue().peekFirstIds(2).size());
+        assertEquals(5, getQueue().peekFirstIds(10).size(), "count > size must return all ids");
+    }
+
+    @Test
+    public void testPeekFirstIdsOnEmptyQueue() {
+        getQueue().flush();
+        assertTrue(getQueue().peekFirstIds(10).isEmpty());
+    }
+
+    @Test
     public void testRateLimitedQueue() {
         // This creates a queue with RATE_LIMITED_WORKFLOW in its name,
         // which exercises the non-cached (popStrict) path in QueueMonitor
