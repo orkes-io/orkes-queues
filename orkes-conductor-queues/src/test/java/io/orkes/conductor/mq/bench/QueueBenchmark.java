@@ -108,7 +108,7 @@ public class QueueBenchmark {
         GenericObjectPoolConfig<Connection> poolConfig = new GenericObjectPoolConfig<>();
         poolConfig.setMaxTotal(consumers + 8);
         JedisPooled pooled = new JedisPooled(poolConfig, HOST, PORT);
-        ExecutorService refillPool = Executors.newFixedThreadPool(2);
+        ExecutorService refillPool = Executors.newFixedThreadPool(8);
         ConductorRedisQueue queue =
                 new ConductorRedisQueue(queueName, new UnifiedJedisCommands(pooled), refillPool);
         queue.flush();
@@ -342,7 +342,7 @@ public class QueueBenchmark {
         // algorithmic behavior we are trying to measure.
         poolConfig.setMaxTotal(Math.max(64, CONSUMER_THREADS + 16));
         JedisPooled pooled = new JedisPooled(poolConfig, HOST, PORT);
-        ExecutorService refillPool = Executors.newFixedThreadPool(2);
+        ExecutorService refillPool = Executors.newFixedThreadPool(8);
         ConductorRedisQueue queue =
                 new ConductorRedisQueue(queueName, new UnifiedJedisCommands(pooled), refillPool);
         queue.flush();
