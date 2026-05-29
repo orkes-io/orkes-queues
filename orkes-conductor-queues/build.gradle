@@ -21,7 +21,10 @@ test {
     ['bench', 'bench.redis.host', 'bench.redis.port', 'bench.out', 'bench.threads',
      'bench.latency', 'bench.latency.consumers', 'bench.latency.wait',
      'bench.latency.interval', 'bench.popBatch', 'bench.producerBatch',
-     'bench.batchAck', 'bench.noAck',
+     'bench.batchAck', 'bench.noAck', 'bench.fanout', 'bench.fanout.queues',
+     'bench.fanout.batch', 'bench.fanout.wait', 'bench.fanout.ratePerQueue',
+     'bench.fanout.publishers', 'bench.fanout.pool', 'bench.fanout.pollerThreads',
+     'bench.fanout.warmupMs', 'bench.fanout.measureMs',
      'orkes.queue.maxPollers', 'orkes.queue.demandPerPoller'].each { k ->
         if (System.getProperty(k) != null) {
             systemProperty k, System.getProperty(k)

@@ -107,9 +107,32 @@ public abstract class QueueMonitor {
     /** Backoff bounds for the idle poller (milliseconds). */
     private static final long MIN_BACKOFF_MS = 1;
 
-    private static final long MAX_BACKOFF_MS = 10;
+    /** Backoff cap used when no caller has supplied a poll {@code waitTime} yet. */
+    private static final long DEFAULT_MAX_BACKOFF_MS =
+            Integer.getInteger("orkes.queue.maxPollBackoffMs", 50);
+
+    /** Absolute ceiling on the idle backoff regardless of a (possibly huge) caller waitTime. */
+    private static final long BACKOFF_CEILING_MS = 1_000;
 
     private volatile long currentBackoffMs = MIN_BACKOFF_MS;
+
+    /** Handle to the pending backoff-scheduled poll, so a new {@link #pop} can preempt it. */
+    private volatile ScheduledFuture<?> backoffFuture;
+
+    /**
+     * Wall-clock ({@code nanoTime}) at which the next poll is expected to run. Used to decide
+     * whether a newly-arriving {@link #pop} needs to preempt a long idle backoff.
+     */
+    private volatile long nextPollDueNanos;
+
+    /**
+     * The most recent {@code pop} waitTime (ms). The idle backoff grows up to this value: a caller
+     * willing to wait {@code waitTime} for messages does not benefit from the poller hitting an
+     * empty queue more often than that, and on the canonical one-worker-per-queue topology polling
+     * faster would be a pure (and large) waste. Hot queues are unaffected — a productive fetch
+     * resets the backoff to {@link #MIN_BACKOFF_MS}.
+     */
+    private volatile long pollWaitMillis = 0;
 
     /**
      * How long helper pollers linger after the last productive fetch before collapsing back to a
@@ -181,12 +204,21 @@ public abstract class QueueMonitor {
         }
 
         List<QueueMessage> messages = new ArrayList<>(count);
+        pollWaitMillis = timeUnit.toMillis(waitTime);
         liveDemand.addAndGet(count);
         try {
-            // Make sure the poller is running to satisfy the demand we just registered.
-            ensurePollerRunning();
-
             final long deadlineNanos = System.nanoTime() + timeUnit.toNanos(waitTime);
+
+            // Make sure the poller is running to satisfy the demand we just registered. Only
+            // preempt
+            // a pending idle backoff if its next poll would land AFTER our deadline — otherwise the
+            // scheduled poll already covers us. This keeps the canonical one-worker-per-queue case
+            // (poll lands within waitTime) from waking on every pop, while still serving a short
+            // wait that is stuck behind a long backoff.
+            ensurePollerRunning();
+            if (peekedMessages.isEmpty() && nextPollDueNanos - deadlineNanos > 0) {
+                wakePoller();
+            }
 
             // Drain whatever is already cached (cheap, non-blocking).
             drainInto(messages, count);
@@ -260,6 +292,19 @@ public abstract class QueueMonitor {
      * @return the number of messages in the queue
      */
     protected abstract long queueSize();
+
+    /**
+     * Idle backoff cap: grow up to the caller's poll waitTime (so we never poll an empty queue more
+     * often than a consumer is willing to wait), bounded by a hard ceiling and floored at the
+     * default when no waitTime is known yet.
+     */
+    private long maxBackoffMs() {
+        long w = pollWaitMillis;
+        if (w <= 0) {
+            w = DEFAULT_MAX_BACKOFF_MS;
+        }
+        return Math.max(MIN_BACKOFF_MS, Math.min(w, BACKOFF_CEILING_MS));
+    }
 
     /**
      * Starts the dedicated poller for this queue if it is not already running. Cheap no-op when a
@@ -365,7 +410,7 @@ public abstract class QueueMonitor {
                     // Redis genuinely had nothing due: back off exponentially up to the cap so an
                     // idle/sparse queue costs few evalsha calls.
                     delay = currentBackoffMs;
-                    currentBackoffMs = Math.min(MAX_BACKOFF_MS, currentBackoffMs * 2);
+                    currentBackoffMs = Math.min(maxBackoffMs(), currentBackoffMs * 2);
                 } else if (fetchedAny) {
                     // Productive cycle: reset backoff and refill immediately to keep the cache deep
                     // for consumers draining it. If the queue is hot enough that the cache still
@@ -421,13 +466,38 @@ public abstract class QueueMonitor {
      */
     private void reschedulePoll(long delayMs) {
         if (delayMs <= 0) {
+            nextPollDueNanos = System.nanoTime();
             submitPoll();
             return;
         }
+        nextPollDueNanos = System.nanoTime() + delayMs * 1_000_000L;
         try {
-            BACKOFF_SCHEDULER.schedule(this::submitPoll, delayMs, TimeUnit.MILLISECONDS);
+            backoffFuture =
+                    BACKOFF_SCHEDULER.schedule(
+                            () -> {
+                                backoffFuture = null;
+                                submitPoll();
+                            },
+                            delayMs,
+                            TimeUnit.MILLISECONDS);
         } catch (RejectedExecutionException rejected) {
             activePollers.decrementAndGet();
+        }
+    }
+
+    /**
+     * Brings a backed-off poller forward when a new {@link #pop} arrives. The idle backoff can grow
+     * up to {@code waitTime}; without this, a message that arrives (or a consumer that starts
+     * waiting with a shorter timeout) could sit until a long backoff sleep elapses. We cancel the
+     * pending sleep and poll immediately, continuing the same poller chain.
+     */
+    private void wakePoller() {
+        ScheduledFuture<?> f = backoffFuture;
+        if (f != null && !f.isDone() && f.cancel(false)) {
+            backoffFuture = null;
+            currentBackoffMs = MIN_BACKOFF_MS;
+            nextPollDueNanos = System.nanoTime();
+            submitPoll();
         }
     }
 
