@@ -28,7 +28,6 @@ import org.junit.jupiter.api.Test;
 import com.netflix.conductor.redis.jedis.UnifiedJedisCommands;
 
 import io.orkes.conductor.mq.QueueMessage;
-import io.orkes.conductor.mq.redis.RedisQueueNotifier;
 import io.orkes.conductor.mq.redis.single.ConductorRedisQueue;
 
 import redis.clients.jedis.Connection;
@@ -87,33 +86,14 @@ public class FanoutBench {
         ExecutorService pollerExec =
                 Executors.newFixedThreadPool(pollerThreads, smallStack("poller"));
 
-        boolean pubsub = Boolean.getBoolean("bench.fanout.pubsub");
-        boolean crossProcess = Boolean.getBoolean("bench.fanout.crossProcess");
-        RedisQueueNotifier notifier = pubsub ? new RedisQueueNotifier(pooled) : null;
-
-        // Consumer-side queue instances (workers poll these).
         String run = UUID.randomUUID().toString().substring(0, 8);
         List<ConductorRedisQueue> queues = new ArrayList<>(numQueues);
         for (int i = 0; i < numQueues; i++) {
             ConductorRedisQueue q =
-                    new ConductorRedisQueue("fan_" + run + "_" + i, cmds, pollerExec, notifier);
+                    new ConductorRedisQueue("fan_" + run + "_" + i, cmds, pollerExec);
             q.flush();
             queues.add(q);
         }
-        // Producer-side instances. In cross-process mode these are SEPARATE objects for the same
-        // queue names, so push() cannot wake the consumer's poller in-process — delivery happens
-        // only via Redis pub/sub (modeling enqueue on process A, dequeue on process B). Otherwise
-        // the producer reuses the consumer instances (same-JVM in-process wake).
-        List<ConductorRedisQueue> pubQueues = queues;
-        if (crossProcess) {
-            pubQueues = new ArrayList<>(numQueues);
-            for (int i = 0; i < numQueues; i++) {
-                pubQueues.add(
-                        new ConductorRedisQueue(
-                                "fan_" + run + "_" + i, cmds, pollerExec, notifier));
-            }
-        }
-        final List<ConductorRedisQueue> producerQueues = pubQueues;
 
         ExecutorService workers = Executors.newFixedThreadPool(totalWorkers, smallStack("worker"));
         ExecutorService pubExec = Executors.newFixedThreadPool(publishers, smallStack("pub"));
@@ -142,7 +122,7 @@ public class FanoutBench {
                                 int qi = Math.floorMod(rrPub.getAndIncrement(), numQueues);
                                 String id = System.nanoTime() + ":" + UUID.randomUUID();
                                 try {
-                                    producerQueues.get(qi).push(List.of(new QueueMessage(id, "")));
+                                    queues.get(qi).push(List.of(new QueueMessage(id, "")));
                                     published.incrementAndGet();
                                 } catch (Exception ignored) {
                                 }
@@ -246,8 +226,8 @@ public class FanoutBench {
                         totalRate));
         r.append(
                 String.format(
-                        "jedis pool=%d  poller threads=%d  pubsub=%b  crossProcess=%b  measure=%.1fs%n",
-                        poolSize, pollerThreads, pubsub, crossProcess, elapsedSec));
+                        "jedis pool=%d  poller threads=%d  measure=%.1fs%n",
+                        poolSize, pollerThreads, elapsedSec));
         r.append(
                 String.format(
                         "published:   %,d  (%,.0f /sec)%n",
@@ -286,9 +266,6 @@ public class FanoutBench {
                 q.flush();
             } catch (Exception ignored) {
             }
-        }
-        if (notifier != null) {
-            notifier.close();
         }
         pollerExec.shutdownNow();
         pooled.close();
