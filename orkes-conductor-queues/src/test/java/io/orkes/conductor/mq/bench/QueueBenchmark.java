@@ -77,8 +77,12 @@ public class QueueBenchmark {
         report.append("\n==================== QUEUE BENCHMARK ====================\n");
         report.append("redis=").append(HOST).append(":").append(PORT).append("\n\n");
 
-        benchScoring(report);
-        benchEndToEnd(report);
+        if (Boolean.getBoolean("bench.latency")) {
+            benchDeliveryLatency(report);
+        } else {
+            benchScoring(report);
+            benchEndToEnd(report);
+        }
 
         report.append("========================================================\n");
         System.out.println(report);
@@ -88,6 +92,128 @@ public class QueueBenchmark {
                     report.toString());
         } catch (Exception ignored) {
         }
+    }
+
+    // ------------------------------------------------------------------
+    // #3 — delivery-latency probe: how long from push() to a poller observing
+    // the message, on a SPARSE queue with FEW consumers (where fixed-interval
+    // idle polling hurts latency most). Also reports evalsha spent while idle.
+    // ------------------------------------------------------------------
+    private void benchDeliveryLatency(StringBuilder report) {
+        int consumers = Integer.getInteger("bench.latency.consumers", 2);
+        int waitMs = Integer.getInteger("bench.latency.wait", 50);
+        int intervalMs = Integer.getInteger("bench.latency.interval", 100);
+
+        String queueName = "benchlat_" + UUID.randomUUID();
+        GenericObjectPoolConfig<Connection> poolConfig = new GenericObjectPoolConfig<>();
+        poolConfig.setMaxTotal(consumers + 8);
+        JedisPooled pooled = new JedisPooled(poolConfig, HOST, PORT);
+        ExecutorService refillPool = Executors.newFixedThreadPool(2);
+        ConductorRedisQueue queue =
+                new ConductorRedisQueue(queueName, new UnifiedJedisCommands(pooled), refillPool);
+        queue.flush();
+
+        ExecutorService consumerPool = Executors.newFixedThreadPool(consumers);
+        ScheduledExecutorService producer = Executors.newSingleThreadScheduledExecutor();
+        AtomicBoolean running = new AtomicBoolean(true);
+        List<long[]> latBuffers = new CopyOnWriteArrayList<>();
+        AtomicLong delivered = new AtomicLong();
+
+        // producer: one message every intervalMs, push time (nanos) encoded in the id
+        producer.scheduleAtFixedRate(
+                () -> {
+                    String id = System.nanoTime() + ":" + UUID.randomUUID();
+                    QueueMessage m = new QueueMessage(id, "");
+                    m.setPriority(0);
+                    try {
+                        queue.push(List.of(m));
+                    } catch (Exception ignored) {
+                    }
+                },
+                0,
+                intervalMs,
+                TimeUnit.MILLISECONDS);
+
+        Runnable consumerTask =
+                () -> {
+                    long[] lat = new long[1_000_000];
+                    int n = 0;
+                    while (running.get()) {
+                        List<QueueMessage> popped = queue.pop(10, waitMs, TimeUnit.MILLISECONDS);
+                        long observed = System.nanoTime();
+                        for (QueueMessage m : popped) {
+                            String id = m.getId();
+                            int c = id.indexOf(':');
+                            if (c > 0) {
+                                try {
+                                    long pushed = Long.parseLong(id.substring(0, c));
+                                    if (n < lat.length) lat[n++] = observed - pushed;
+                                    delivered.incrementAndGet();
+                                } catch (NumberFormatException ignored) {
+                                }
+                            }
+                            queue.ack(m.getId());
+                        }
+                    }
+                    latBuffers.add(java.util.Arrays.copyOf(lat, n));
+                };
+
+        for (int i = 0; i < consumers; i++) consumerPool.submit(consumerTask);
+        sleep(WARMUP_MS);
+
+        // measurement window
+        latBuffers.clear();
+        delivered.set(0);
+        running.set(false);
+        sleep(waitMs + 50L);
+        running.set(true);
+        try (Jedis admin = new Jedis(HOST, PORT)) {
+            admin.configResetStat();
+        }
+        long start = System.nanoTime();
+        for (int i = 0; i < consumers; i++) consumerPool.submit(consumerTask);
+        sleep(MEASURE_MS);
+        double elapsedSec = (System.nanoTime() - start) / 1e9;
+        running.set(false);
+        producer.shutdownNow();
+        consumerPool.shutdown();
+        try {
+            consumerPool.awaitTermination(10, TimeUnit.SECONDS);
+        } catch (InterruptedException ignored) {
+        }
+
+        long evalsha = commandCalls("evalsha");
+        int total = latBuffers.stream().mapToInt(a -> a.length).sum();
+        long[] all = new long[total];
+        int idx = 0;
+        for (long[] b : latBuffers) {
+            System.arraycopy(b, 0, all, idx, b.length);
+            idx += b.length;
+        }
+        java.util.Arrays.sort(all);
+
+        report.append("---- #3 delivery latency probe (push -> observed) ----\n");
+        report.append(
+                String.format(
+                        "  consumers=%d  pop waitTime=%dms  arrival every %dms  duration=%.1fs%n",
+                        consumers, waitMs, intervalMs, elapsedSec));
+        report.append(String.format("  delivered:     %,d msgs%n", delivered.get()));
+        report.append(
+                String.format(
+                        "  Redis evalsha: %,d  (idle polling cost; ~%.0f/sec)%n",
+                        evalsha, evalsha / elapsedSec));
+        report.append(
+                String.format(
+                        "  delivery latency (ms): p50=%.2f  p95=%.2f  p99=%.2f  max=%.2f%n",
+                        pct(all, 50) / 1e6,
+                        pct(all, 95) / 1e6,
+                        pct(all, 99) / 1e6,
+                        (all.length == 0 ? 0 : all[all.length - 1]) / 1e6));
+        report.append("\n");
+
+        queue.flush();
+        refillPool.shutdownNow();
+        pooled.close();
     }
 
     // ------------------------------------------------------------------
