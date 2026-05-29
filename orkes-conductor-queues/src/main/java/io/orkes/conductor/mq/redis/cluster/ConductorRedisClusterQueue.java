@@ -88,12 +88,19 @@ public class ConductorRedisClusterQueue implements ConductorQueue {
     public void push(List<QueueMessage> messages) {
         long now = clock.millis();
         Map<String, Double> scores = new HashMap<>();
+        boolean anyDueNow = false;
         for (QueueMessage msg : messages) {
             double score = getScore(now, msg);
             String messageId = msg.getId();
             scores.put(messageId, score);
+            if (msg.getTimeout() <= 0) {
+                anyDueNow = true;
+            }
         }
         jedis.zadd(queueName, scores);
+        if (anyDueNow) {
+            queueMonitor.notifyMessageReady();
+        }
     }
 
     @Override

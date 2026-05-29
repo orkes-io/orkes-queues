@@ -114,6 +114,18 @@ public abstract class QueueMonitor {
     /** Absolute ceiling on the idle backoff regardless of a (possibly huge) caller waitTime. */
     private static final long BACKOFF_CEILING_MS = 1_000;
 
+    /**
+     * Push-wake coalescing window (ms). A push only wakes the poller if the previous poll was more
+     * than this long ago, so a burst of pushes is gathered into a single batched poll. This bounds
+     * push-driven polling to ~one poll per window per queue while keeping delivery latency ≈ this
+     * window for a hot queue (and ≈ a poll round-trip for a sparse one, where pushes are further
+     * apart than the window).
+     */
+    private static final long BATCH_WINDOW_MS = Integer.getInteger("orkes.queue.batchWindowMs", 5);
+
+    /** {@code nanoTime} of the most recent Redis poll, for push-wake coalescing. */
+    private volatile long lastPollNanos;
+
     private volatile long currentBackoffMs = MIN_BACKOFF_MS;
 
     /** Handle to the pending backoff-scheduled poll, so a new {@link #pop} can preempt it. */
@@ -387,18 +399,31 @@ public abstract class QueueMonitor {
             // is what keeps a hot/saturated queue's throughput up. Bounded by MAX_LOOP_FETCHES so
             // one queue cannot monopolize the shared executor thread.
             boolean fetchedAny = false;
+            boolean drained = false; // Redis had no more due messages (empty or partial batch)
+            boolean cacheFull = false; // cache already covers outstanding demand
             for (int i = 0; i < MAX_LOOP_FETCHES; i++) {
                 int unfilled = liveDemand.get() - peekedMessages.size();
                 if (unfilled <= 0) {
+                    cacheFull = true;
                     break; // cache already covers outstanding demand — do not over-fetch
                 }
-                int fetched = fetchIntoCache(unfilled);
+                int batch = Math.min(MAX_POLL_COUNT, unfilled);
+                int fetched = fetchIntoCache(batch);
                 if (fetched <= 0) {
                     redisEmpty = true;
-                    break; // Redis had nothing due — back off
+                    drained = true;
+                    break; // Redis had nothing due
                 }
                 fetchedAny = true;
                 lastProductiveMs = clock.millis();
+                if (fetched < batch) {
+                    // Got everything that was due (Redis returned fewer than we asked for). The
+                    // queue is drained, so stop here rather than issuing another (empty) poll just
+                    // to discover that — the next message arrives via push-wake or the fallback
+                    // backoff.
+                    drained = true;
+                    break;
+                }
             }
 
             // Keep the poller alive as long as consumers are waiting (liveDemand > 0). The poller
@@ -406,26 +431,27 @@ public abstract class QueueMonitor {
             // where the poller stops while a consumer is still blocked needing more messages.
             if (liveDemand.get() > 0) {
                 reschedule = true;
-                if (redisEmpty) {
-                    // Redis genuinely had nothing due: back off exponentially up to the cap so an
-                    // idle/sparse queue costs few evalsha calls.
+                if (drained) {
+                    // Nothing more is due right now: back off exponentially up to the cap so an
+                    // idle/sparse queue costs few evalsha calls. A freshly pushed message wakes the
+                    // poller immediately (coalesced push-wake), so delivery latency does not hinge
+                    // on this backoff — it is only the fallback cadence for missed/cross-process
+                    // notifications.
                     delay = currentBackoffMs;
                     currentBackoffMs = Math.min(maxBackoffMs(), currentBackoffMs * 2);
-                } else if (fetchedAny) {
-                    // Productive cycle: reset backoff and refill immediately to keep the cache deep
-                    // for consumers draining it. If the queue is hot enough that the cache still
-                    // cannot cover demand, add a helper poller to parallelize Redis round-trips.
+                    if (fetchedAny) {
+                        maybeSpawnHelper();
+                    }
+                } else if (cacheFull) {
+                    // Cache already covers outstanding demand. Pause one tick (avoid a CPU-burning
+                    // re-dispatch spin) and keep backoff reset so we stay responsive.
+                    currentBackoffMs = MIN_BACKOFF_MS;
+                    delay = MIN_BACKOFF_MS;
+                } else {
+                    // Hit the loop cap with full batches: more is available, keep going now.
                     currentBackoffMs = MIN_BACKOFF_MS;
                     delay = 0;
                     maybeSpawnHelper();
-                } else {
-                    // Cache already covers outstanding demand (we did not even hit Redis). Pause
-                    // one tick on the shared scheduler — long enough to avoid a CPU-burning
-                    // re-dispatch spin, short enough that the cache is topped up again before
-                    // consumers drain it. Backoff stays reset so this is a fixed 1ms cadence while
-                    // the queue is hot, not an escalating idle backoff.
-                    currentBackoffMs = MIN_BACKOFF_MS;
-                    delay = MIN_BACKOFF_MS;
                 }
             }
         } catch (Throwable t) {
@@ -494,22 +520,51 @@ public abstract class QueueMonitor {
     private void wakePoller() {
         ScheduledFuture<?> f = backoffFuture;
         if (f != null && !f.isDone() && f.cancel(false)) {
+            // Bring the next poll forward to now. Do NOT reset the backoff to the floor: under a
+            // steady push-wake stream that would restart the exponential ramp on every message and
+            // produce a burst of empty polls between arrivals. The backoff is the fallback cadence;
+            // a productive fetch (the hot-queue path) is what resets it.
             backoffFuture = null;
-            currentBackoffMs = MIN_BACKOFF_MS;
             nextPollDueNanos = System.nanoTime();
             submitPoll();
         }
     }
 
     /**
-     * Fetches due messages from Redis (bounded by {@code demand} and {@link #MAX_POLL_COUNT}) and
-     * appends them to the cache. Returns the number of messages fetched.
+     * Notifies the poller that a message which is due now has just been pushed to this queue, so it
+     * can fetch it immediately instead of waiting out its idle backoff. This is the event-driven
+     * path that drives queue wait time toward zero: when {@code push} and the consumer share a JVM,
+     * delivery latency becomes a poll round-trip rather than up to {@code waitTime}.
+     *
+     * <p>No-op when nothing is waiting to consume (no consumer is blocked, so there is no urgency —
+     * the next {@code pop} starts polling) or on the non-cached path. The poller's backoff remains
+     * the correctness fallback: a missed notification simply delays delivery to the next scheduled
+     * poll, it never drops a message.
      */
-    private int fetchIntoCache(int demand) {
-        int batch = Math.min(MAX_POLL_COUNT, demand);
+    public void notifyMessageReady() {
+        if (!cached || liveDemand.get() <= 0) {
+            return;
+        }
+        ensurePollerRunning();
+        // Coalesce: wake at most once per batch window. If we polled within the last
+        // BATCH_WINDOW_MS, a burst of pushes is gathered by the next (already-imminent) poll rather
+        // than each forcing its own. Sparse queues (pushes further apart than the window) wake per
+        // message → ~poll-round-trip latency; hot queues coalesce → one batched poll per window,
+        // latency ≈ window. This is what keeps a hot shared queue from polling per push.
+        if (System.nanoTime() - lastPollNanos > BATCH_WINDOW_MS * 1_000_000L) {
+            wakePoller();
+        }
+    }
+
+    /**
+     * Fetches up to {@code batch} due messages from Redis and appends them to the cache. Returns
+     * the number fetched; a value &lt; {@code batch} means Redis had nothing more due (drained).
+     */
+    private int fetchIntoCache(int batch) {
         if (batch <= 0) {
             return 0;
         }
+        lastPollNanos = System.nanoTime();
         double now = Long.valueOf(clock.millis() + 1).doubleValue();
         double maxTime = now + queueUnackTime;
         long messageExpiry = (long) now + queueUnackTime;

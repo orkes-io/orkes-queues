@@ -95,13 +95,22 @@ public class ConductorRedisQueue implements ConductorQueue {
 
         long now = clock.millis();
         Map<String, Double> scores = new HashMap<>();
+        boolean anyDueNow = false;
         for (QueueMessage msg : messages) {
             double score = getScore(now, msg);
             String messageId = msg.getId();
             // jedis.zadd(queueName, score, messageId);
             scores.put(messageId, score);
+            if (msg.getTimeout() <= 0) {
+                anyDueNow = true;
+            }
         }
         jedis.zadd(queueName, scores);
+        if (anyDueNow) {
+            // Wake the poller so a waiting consumer gets this message in ~a poll round-trip rather
+            // than waiting out the idle backoff (in-process; cross-process relies on the backoff).
+            queueMonitor.notifyMessageReady();
+        }
     }
 
     @Override
