@@ -74,6 +74,17 @@ public class ConductorRedisClusterQueue implements ConductorQueue {
     }
 
     @Override
+    public int ackAll(List<String> messageIds) {
+        if (messageIds == null || messageIds.isEmpty()) {
+            return 0;
+        }
+        // All members live under the single queue key (one slot), so a multi-member ZREM is a
+        // single round-trip even on a cluster.
+        Long removed = jedis.zrem(queueName, messageIds.toArray(new String[0]));
+        return removed == null ? 0 : removed.intValue();
+    }
+
+    @Override
     public void push(List<QueueMessage> messages) {
         long now = clock.millis();
         Map<String, Double> scores = new HashMap<>();

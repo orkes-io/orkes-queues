@@ -20,7 +20,9 @@ test {
     // Forward benchmark opt-in properties to the forked test JVM (see QueueBenchmark).
     ['bench', 'bench.redis.host', 'bench.redis.port', 'bench.out', 'bench.threads',
      'bench.latency', 'bench.latency.consumers', 'bench.latency.wait',
-     'bench.latency.interval', 'orkes.queue.maxPollers', 'orkes.queue.demandPerPoller'].each { k ->
+     'bench.latency.interval', 'bench.popBatch', 'bench.producerBatch',
+     'bench.batchAck', 'bench.noAck',
+     'orkes.queue.maxPollers', 'orkes.queue.demandPerPoller'].each { k ->
         if (System.getProperty(k) != null) {
             systemProperty k, System.getProperty(k)
         }

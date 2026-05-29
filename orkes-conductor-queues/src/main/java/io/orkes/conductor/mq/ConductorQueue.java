@@ -52,6 +52,28 @@ public interface ConductorQueue {
     boolean ack(String messageId);
 
     /**
+     * Acknowledges several messages in one operation, removing them from the queue. Implementations
+     * backed by a store with a multi-key remove (e.g. Redis {@code ZREM key m1 m2 …}) should
+     * override this to do a single round-trip — acking per message is a common throughput
+     * bottleneck under load. The default falls back to looping {@link #ack(String)}.
+     *
+     * @param messageIds the message ids to acknowledge
+     * @return the number of messages that were actually removed
+     */
+    default int ackAll(List<String> messageIds) {
+        if (messageIds == null || messageIds.isEmpty()) {
+            return 0;
+        }
+        int removed = 0;
+        for (String messageId : messageIds) {
+            if (ack(messageId)) {
+                removed++;
+            }
+        }
+        return removed;
+    }
+
+    /**
      * Pushes messages onto the queue.
      *
      * @param messages the messages to push

@@ -424,6 +424,42 @@ public abstract class AbstractConductorQueueTest {
     }
 
     @Test
+    public void testAckAll() {
+        getQueue().flush();
+
+        int count = 10;
+        List<QueueMessage> messages = new LinkedList<>();
+        List<String> ids = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            String id = "ackall-" + UUID.randomUUID();
+            messages.add(new QueueMessage(id, "payload-" + i));
+            ids.add(id);
+        }
+        getQueue().push(messages);
+        assertEquals(count, getQueue().size());
+
+        // Batch ack removes every message and reports how many were actually removed.
+        int removed = getQueue().ackAll(ids);
+        assertEquals(count, removed);
+        assertEquals(0, getQueue().size());
+
+        // Acking the same ids again removes nothing.
+        assertEquals(0, getQueue().ackAll(ids));
+
+        // Empty input is a no-op.
+        assertEquals(0, getQueue().ackAll(Collections.emptyList()));
+
+        // Partial overlap: only the ids still present are counted.
+        getQueue().flush();
+        QueueMessage present = new QueueMessage("present-" + UUID.randomUUID(), "p");
+        getQueue().push(Arrays.asList(present));
+        int removed2 =
+                getQueue().ackAll(Arrays.asList(present.getId(), "missing-" + UUID.randomUUID()));
+        assertEquals(1, removed2);
+        assertEquals(0, getQueue().size());
+    }
+
+    @Test
     public void testRemove() {
         getQueue().flush();
 

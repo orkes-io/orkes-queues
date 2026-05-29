@@ -73,6 +73,16 @@ public class ConductorRedisQueue implements ConductorQueue {
     }
 
     @Override
+    public int ackAll(List<String> messageIds) {
+        if (messageIds == null || messageIds.isEmpty()) {
+            return 0;
+        }
+        // Single multi-member ZREM instead of one round-trip per message.
+        Long removed = jedis.zrem(queueName, messageIds.toArray(new String[0]));
+        return removed == null ? 0 : removed.intValue();
+    }
+
+    @Override
     public void remove(String messageId) {
 
         jedis.zrem(queueName, messageId);
@@ -159,5 +169,20 @@ public class ConductorRedisQueue implements ConductorQueue {
     @Override
     public String getShardName() {
         return null;
+    }
+
+    /** Total Redis polls issued by this queue's poller (observability). */
+    public long getPollsTotal() {
+        return queueMonitor.getPollsTotal();
+    }
+
+    /** Polls that found nothing due (observability). */
+    public long getPollsEmpty() {
+        return queueMonitor.getPollsEmpty();
+    }
+
+    /** Total messages fetched from Redis into the cache (observability). */
+    public long getMessagesFetched() {
+        return queueMonitor.getMessagesFetched();
     }
 }

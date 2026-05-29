@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import io.orkes.conductor.mq.QueueMessage;
 
@@ -119,6 +120,28 @@ public abstract class QueueMonitor {
             Integer.getInteger("orkes.queue.helperLingerMs", 50);
 
     private volatile long lastProductiveMs = 0;
+
+    // Lightweight poll metrics (cheap atomics). Exposed for observability/tuning: an empty poll is
+    // one that hit Redis but found nothing due. A high empty ratio under load indicates the poller
+    // is polling faster than messages arrive (back off / batch up).
+    private final AtomicLong pollsTotal = new AtomicLong();
+    private final AtomicLong pollsEmpty = new AtomicLong();
+    private final AtomicLong messagesFetched = new AtomicLong();
+
+    /** Total Redis polls (evalsha) issued by this queue's poller. */
+    public long getPollsTotal() {
+        return pollsTotal.get();
+    }
+
+    /** Polls that returned no messages (Redis had nothing due). */
+    public long getPollsEmpty() {
+        return pollsEmpty.get();
+    }
+
+    /** Total messages fetched from Redis into the cache. */
+    public long getMessagesFetched() {
+        return messagesFetched.get();
+    }
 
     private final boolean cached;
 
@@ -421,7 +444,9 @@ public abstract class QueueMonitor {
         double maxTime = now + queueUnackTime;
         long messageExpiry = (long) now + queueUnackTime;
         List<String> response = pollMessages(now, maxTime, batch);
+        pollsTotal.incrementAndGet();
         if (response == null || response.isEmpty()) {
+            pollsEmpty.incrementAndGet();
             return 0;
         }
         int fetched = 0;
@@ -434,6 +459,7 @@ public abstract class QueueMonitor {
             peekedMessages.add(message);
             fetched++;
         }
+        messagesFetched.addAndGet(fetched);
         return fetched;
     }
 

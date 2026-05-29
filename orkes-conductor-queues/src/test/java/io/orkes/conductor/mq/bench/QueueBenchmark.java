@@ -58,11 +58,11 @@ public class QueueBenchmark {
 
     // ---- end-to-end load parameters ----
     private static final int CONSUMER_THREADS = Integer.getInteger("bench.threads", 24);
-    private static final int POP_BATCH = 10;
+    private static final int POP_BATCH = Integer.getInteger("bench.popBatch", 20);
     private static final int POP_WAIT_MS = 5;
     private static final int WARMUP_MS = 2_000;
     private static final int MEASURE_MS = 8_000;
-    private static final int PRODUCER_BATCH = 50;
+    private static final int PRODUCER_BATCH = Integer.getInteger("bench.producerBatch", 50);
 
     private static final MathContext PRECISION_MC = new MathContext(20);
     private static final BigDecimal HUNDRED = new BigDecimal(100);
@@ -375,6 +375,8 @@ public class QueueBenchmark {
                     TimeUnit.MILLISECONDS);
         }
 
+        boolean batchAck = Boolean.getBoolean("bench.batchAck");
+        boolean noAck = Boolean.getBoolean("bench.noAck");
         Runnable consumerTask =
                 () -> {
                     long[] lat = new long[2_000_000];
@@ -391,7 +393,18 @@ public class QueueBenchmark {
                                 duplicates.incrementAndGet();
                             }
                             consumed.incrementAndGet();
-                            queue.ack(m.getId());
+                        }
+                        if (noAck || popped.isEmpty()) {
+                            // ceiling measurement: skip ack entirely
+                        } else if (batchAck) {
+                            // one multi-member ZREM per pop via the ackAll API
+                            List<String> ids = new ArrayList<>(popped.size());
+                            for (QueueMessage m : popped) ids.add(m.getId());
+                            queue.ackAll(ids);
+                        } else {
+                            for (QueueMessage m : popped) {
+                                queue.ack(m.getId());
+                            }
                         }
                     }
                     latencyBuffers.add(java.util.Arrays.copyOf(lat, n));
@@ -413,11 +426,15 @@ public class QueueBenchmark {
         try (Jedis admin = new Jedis(HOST, PORT)) {
             admin.configResetStat();
         }
+        long pollsTotal0 = queue.getPollsTotal();
+        long pollsEmpty0 = queue.getPollsEmpty();
         long measureStart = System.nanoTime();
         for (int i = 0; i < CONSUMER_THREADS; i++) consumers.submit(consumerTask);
 
         sleep(MEASURE_MS);
         double elapsedSec = (System.nanoTime() - measureStart) / 1e9;
+        long pollsTotalWindow = queue.getPollsTotal() - pollsTotal0;
+        long pollsEmptyWindow = queue.getPollsEmpty() - pollsEmpty0;
         running.set(false);
         producer.shutdownNow();
         consumers.shutdown();
@@ -443,8 +460,8 @@ public class QueueBenchmark {
         report.append("---- #1 ").append(name).append(" ----\n");
         report.append(
                 String.format(
-                        "  consumer threads=%d  refill pool=2  duration=%.1fs%n",
-                        CONSUMER_THREADS, elapsedSec));
+                        "  consumer threads=%d  popBatch=%d  duration=%.1fs%n",
+                        CONSUMER_THREADS, POP_BATCH, elapsedSec));
         report.append(
                 String.format(
                         "  consumed:      %,d msgs  (%,.0f msgs/sec)%n",
@@ -456,8 +473,16 @@ public class QueueBenchmark {
                         duplicates.get(), 100.0 * duplicates.get() / Math.max(1, consumedN)));
         report.append(
                 String.format(
-                        "  Redis evalsha: %,d  (%.3f per pop call)%n",
-                        evalsha, evalsha / (double) Math.max(1, pops)));
+                        "  Redis evalsha: %,d  (%.3f per pop call, %.1f msgs/poll)%n",
+                        evalsha,
+                        evalsha / (double) Math.max(1, pops),
+                        consumedN / (double) Math.max(1, evalsha)));
+        report.append(
+                String.format(
+                        "  poller polls:  %,d  (empty %,d = %.1f%%)%n",
+                        pollsTotalWindow,
+                        pollsEmptyWindow,
+                        100.0 * pollsEmptyWindow / Math.max(1, pollsTotalWindow)));
         report.append(String.format("  Redis zadd:    %,d%n", zadd));
         report.append("  pop latency (us): ")
                 .append(
