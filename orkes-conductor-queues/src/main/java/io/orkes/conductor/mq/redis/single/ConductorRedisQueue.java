@@ -23,6 +23,7 @@ import com.netflix.conductor.redis.jedis.JedisCommands;
 import io.orkes.conductor.mq.ConductorQueue;
 import io.orkes.conductor.mq.QueueMessage;
 import io.orkes.conductor.mq.redis.QueueMonitor;
+import io.orkes.conductor.mq.redis.RedisQueueNotifier;
 
 import lombok.extern.slf4j.Slf4j;
 import redis.clients.jedis.params.ZAddParams;
@@ -39,6 +40,8 @@ public class ConductorRedisQueue implements ConductorQueue {
 
     private final QueueMonitor queueMonitor;
 
+    private final RedisQueueNotifier notifier;
+
     /**
      * Creates a new conductor Redis queue.
      *
@@ -48,10 +51,33 @@ public class ConductorRedisQueue implements ConductorQueue {
      */
     public ConductorRedisQueue(
             String queueName, JedisCommands jedisPool, ExecutorService executorService) {
+        this(queueName, jedisPool, executorService, null);
+    }
+
+    /**
+     * Creates a new conductor Redis queue with an optional cross-process push notifier. When a
+     * notifier is supplied, a push of a due message wakes pollers on other processes (and this one)
+     * via Redis pub/sub, so cross-instance delivery latency drops to ~a pub/sub round-trip instead
+     * of the poller's idle backoff. Passing {@code null} keeps the in-process-only behavior.
+     *
+     * @param queueName the name of the queue
+     * @param jedisPool the Jedis commands interface
+     * @param executorService the executor service for async polling
+     * @param notifier cross-process wake notifier, or {@code null} for in-process only
+     */
+    public ConductorRedisQueue(
+            String queueName,
+            JedisCommands jedisPool,
+            ExecutorService executorService,
+            RedisQueueNotifier notifier) {
         this.jedis = jedisPool;
         this.clock = Clock.systemDefaultZone();
         this.queueName = queueName;
         this.queueMonitor = new RedisQueueMonitor(jedisPool, queueName, executorService);
+        this.notifier = notifier;
+        if (notifier != null) {
+            notifier.register(queueName, queueMonitor);
+        }
         log.info("ConductorRedisQueue started serving {}", queueName);
     }
 
@@ -107,9 +133,12 @@ public class ConductorRedisQueue implements ConductorQueue {
         }
         jedis.zadd(queueName, scores);
         if (anyDueNow) {
-            // Wake the poller so a waiting consumer gets this message in ~a poll round-trip rather
-            // than waiting out the idle backoff (in-process; cross-process relies on the backoff).
+            // Wake the local poller (same-JVM consumers) in ~a poll round-trip, and notify other
+            // processes via pub/sub when a notifier is configured (cross-instance consumers).
             queueMonitor.notifyMessageReady();
+            if (notifier != null) {
+                notifier.publish(queueName);
+            }
         }
     }
 

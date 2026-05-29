@@ -26,6 +26,7 @@ test {
      'bench.fanout.batch', 'bench.fanout.wait', 'bench.fanout.ratePerQueue',
      'bench.fanout.publishers', 'bench.fanout.pool', 'bench.fanout.pollerThreads',
      'bench.fanout.warmupMs', 'bench.fanout.measureMs',
+     'bench.fanout.pubsub', 'bench.fanout.crossProcess',
      'orkes.queue.maxPollers', 'orkes.queue.demandPerPoller',
      'orkes.queue.maxPollBackoffMs', 'orkes.queue.batchWindowMs'].each { k ->
         if (System.getProperty(k) != null) {
