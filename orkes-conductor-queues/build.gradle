@@ -22,6 +22,7 @@ test {
      'bench.latency', 'bench.latency.consumers', 'bench.latency.wait',
      'bench.latency.interval', 'bench.popBatch', 'bench.producerBatch',
      'bench.batchAck', 'bench.noAck', 'bench.fanout', 'bench.fanout.queues',
+     'bench.fanout.workersPerQueue',
      'bench.fanout.batch', 'bench.fanout.wait', 'bench.fanout.ratePerQueue',
      'bench.fanout.publishers', 'bench.fanout.pool', 'bench.fanout.pollerThreads',
      'bench.fanout.warmupMs', 'bench.fanout.measureMs',

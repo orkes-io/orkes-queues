@@ -62,6 +62,8 @@ public class FanoutBench {
         }
 
         final int numQueues = Integer.getInteger("bench.fanout.queues", 1000);
+        final int workersPerQueue = Integer.getInteger("bench.fanout.workersPerQueue", 1);
+        final int totalWorkers = numQueues * workersPerQueue;
         final int batch = Integer.getInteger("bench.fanout.batch", 10);
         final int waitMs = Integer.getInteger("bench.fanout.wait", 100);
         final int ratePerQueue = Integer.getInteger("bench.fanout.ratePerQueue", 10);
@@ -93,7 +95,7 @@ public class FanoutBench {
             queues.add(q);
         }
 
-        ExecutorService workers = Executors.newFixedThreadPool(numQueues, smallStack("worker"));
+        ExecutorService workers = Executors.newFixedThreadPool(totalWorkers, smallStack("worker"));
         ExecutorService pubExec = Executors.newFixedThreadPool(publishers, smallStack("pub"));
         AtomicBoolean running = new AtomicBoolean(true);
 
@@ -132,10 +134,10 @@ public class FanoutBench {
                     });
         }
 
-        // ---- workers: one per queue, each long-polls its own queue ----
-        Runnable[] workerTasks = new Runnable[numQueues];
-        for (int i = 0; i < numQueues; i++) {
-            final ConductorRedisQueue q = queues.get(i);
+        // ---- workers: workersPerQueue dedicated to each queue (round-robin assignment) ----
+        Runnable[] workerTasks = new Runnable[totalWorkers];
+        for (int i = 0; i < totalWorkers; i++) {
+            final ConductorRedisQueue q = queues.get(i % numQueues);
             workerTasks[i] =
                     () -> {
                         long[] lat = new long[20_000];
@@ -214,8 +216,14 @@ public class FanoutBench {
         r.append("\n============ FAN-OUT BENCHMARK ============\n");
         r.append(
                 String.format(
-                        "queues=%d  workers=%d (1:1)  batch=%d  waitMs=%d  ratePerQueue=%d (total ~%,d/s)%n",
-                        numQueues, numQueues, batch, waitMs, ratePerQueue, totalRate));
+                        "queues=%d  workersPerQueue=%d  totalWorkers=%d  batch=%d  waitMs=%d  ratePerQueue=%d (total ~%,d/s)%n",
+                        numQueues,
+                        workersPerQueue,
+                        totalWorkers,
+                        batch,
+                        waitMs,
+                        ratePerQueue,
+                        totalRate));
         r.append(
                 String.format(
                         "jedis pool=%d  poller threads=%d  measure=%.1fs%n",
