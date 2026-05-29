@@ -148,13 +148,10 @@ public interface ConductorQueue {
         if (msg.getTimeout() > 0) {
 
             // Use the priority as a fraction to ensure that the messages with the same priority
-            // Gets ordered for within that one millisecond duration
-            BigDecimal timeout = new BigDecimal(now + msg.getTimeout());
-            BigDecimal divideByOne =
-                    BigDecimal.ONE.divide(new BigDecimal(msg.getPriority() + 1), PRECISION_MC);
-            BigDecimal oneMinusDivByOne = BigDecimal.ONE.subtract(divideByOne);
-            BigDecimal bd = timeout.add(oneMinusDivByOne);
-            score = bd.doubleValue();
+            // Gets ordered for within that one millisecond duration.
+            // The score is stored as a double anyway, so this primitive computation is equivalent
+            // to (and ~2 orders of magnitude cheaper than) the previous BigDecimal version.
+            score = (double) (now + msg.getTimeout()) + (1.0 - 1.0 / (msg.getPriority() + 1));
 
         } else {
             // double score = now + msg.getTimeout() + priority;     --> This was the old logic -

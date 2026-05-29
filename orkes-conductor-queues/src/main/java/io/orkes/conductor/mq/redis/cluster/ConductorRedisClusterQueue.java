@@ -12,7 +12,6 @@
  */
 package io.orkes.conductor.mq.redis.cluster;
 
-import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.HashMap;
 import java.util.List;
@@ -37,8 +36,6 @@ public class ConductorRedisClusterQueue implements ConductorQueue {
     private final Clock clock;
 
     private final String queueName;
-
-    private static final BigDecimal HUNDRED = new BigDecimal(100);
 
     private final ClusteredQueueMonitor queueMonitor;
 
@@ -132,7 +129,7 @@ public class ConductorRedisClusterQueue implements ConductorQueue {
         if (score == null) {
             return null;
         }
-        int priority = new BigDecimal(score).remainder(BigDecimal.ONE).multiply(HUNDRED).intValue();
+        int priority = (int) ((score - Math.floor(score)) * 100);
         return new QueueMessage(messageId, "", score.longValue(), priority);
     }
 

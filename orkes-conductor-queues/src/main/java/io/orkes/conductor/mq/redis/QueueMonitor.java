@@ -12,11 +12,11 @@
  */
 package io.orkes.conductor.mq.redis;
 
-import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import io.orkes.conductor.mq.QueueMessage;
@@ -29,8 +29,6 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public abstract class QueueMonitor {
 
-    private static final BigDecimal HUNDRED = new BigDecimal(100);
-
     private final Clock clock;
 
     private final LinkedBlockingQueue<QueueMessage> peekedMessages;
@@ -38,6 +36,13 @@ public abstract class QueueMonitor {
     private ExecutorService executorService;
 
     private final AtomicInteger pollCount = new AtomicInteger(0);
+
+    /**
+     * Guards against a "refill stampede": when many consumer threads find the cache empty at the
+     * same time, only one of them should issue the (relatively expensive) Redis poll. The others
+     * skip the poll and wait on {@link #peekedMessages}, which the in-flight refill populates.
+     */
+    private final AtomicBoolean refillInProgress = new AtomicBoolean(false);
 
     @Getter @Setter private int queueUnackTime = 30_000;
 
@@ -77,12 +82,12 @@ public abstract class QueueMonitor {
         List<QueueMessage> messages = new ArrayList<>();
         int pendingCount = pollCount.addAndGet(count);
         if (peekedMessages.isEmpty()) {
-            __peekedMessages();
+            // Cold path: refill synchronously, but only if no other thread is already doing so.
+            // If one is, fall through and wait on the in-flight refill below instead of issuing a
+            // duplicate (and redelivery-prone) Redis poll.
+            refillSynchronouslyIfIdle();
         } else if (peekedMessages.size() < pendingCount) {
-            try {
-                executorService.submit(this::__peekedMessages);
-            } catch (RejectedExecutionException ignored) {
-            }
+            triggerAsyncRefill();
         }
 
         long now = clock.millis();
@@ -133,6 +138,43 @@ public abstract class QueueMonitor {
      */
     protected abstract long queueSize();
 
+    /**
+     * Runs a synchronous refill on the calling thread, but only if no refill (sync or async) is
+     * already in flight. When one is, this is a no-op and the caller waits on {@link
+     * #peekedMessages} for that refill to deliver.
+     */
+    private void refillSynchronouslyIfIdle() {
+        if (refillInProgress.compareAndSet(false, true)) {
+            try {
+                __peekedMessages();
+            } finally {
+                refillInProgress.set(false);
+            }
+        }
+    }
+
+    /**
+     * Submits a background refill, but only if none is already in flight. The flag is held until
+     * the submitted task completes so that concurrent {@code pop} calls collapse onto a single
+     * Redis poll.
+     */
+    private void triggerAsyncRefill() {
+        if (refillInProgress.compareAndSet(false, true)) {
+            try {
+                executorService.submit(
+                        () -> {
+                            try {
+                                __peekedMessages();
+                            } finally {
+                                refillInProgress.set(false);
+                            }
+                        });
+            } catch (RejectedExecutionException rejected) {
+                refillInProgress.set(false);
+            }
+        }
+    }
+
     private void __peekedMessages() {
         try {
 
@@ -159,11 +201,7 @@ public abstract class QueueMonitor {
                 String id = response.get(i);
                 String scoreString = response.get(i + 1);
 
-                int priority =
-                        new BigDecimal(scoreString)
-                                .remainder(BigDecimal.ONE)
-                                .multiply(HUNDRED)
-                                .intValue();
+                int priority = decodePriority(scoreString);
                 QueueMessage message = new QueueMessage(id, "", timeout, priority);
                 message.setExpiry(messageExpiry);
                 peekedMessages.add(message);
@@ -172,6 +210,17 @@ public abstract class QueueMonitor {
         } catch (Throwable t) {
             log.warn(t.getMessage(), t);
         }
+    }
+
+    /**
+     * Decodes the priority that {@link io.orkes.conductor.mq.ConductorQueue#getScore} encoded into
+     * the fractional part of the score. Uses primitive arithmetic rather than {@code BigDecimal} —
+     * the score is already a double, so there is no precision to recover, and this runs once per
+     * polled message on the hot path.
+     */
+    private static int decodePriority(String scoreString) {
+        double score = Double.parseDouble(scoreString);
+        return (int) ((score - Math.floor(score)) * 100);
     }
 
     private List<QueueMessage> popStrict(int count) {
@@ -187,11 +236,7 @@ public abstract class QueueMonitor {
             long timeout = 0;
             String id = response.get(i);
             String scoreString = response.get(i + 1);
-            int priority =
-                    new BigDecimal(scoreString)
-                            .remainder(BigDecimal.ONE)
-                            .multiply(HUNDRED)
-                            .intValue();
+            int priority = decodePriority(scoreString);
             QueueMessage message = new QueueMessage(id, "", timeout, priority);
             message.setExpiry(messageExpiry);
             result.add(message);
