@@ -57,7 +57,7 @@ public class QueueBenchmark {
     private static final int PORT = Integer.getInteger("bench.redis.port", 6399);
 
     // ---- end-to-end load parameters ----
-    private static final int CONSUMER_THREADS = 24;
+    private static final int CONSUMER_THREADS = Integer.getInteger("bench.threads", 24);
     private static final int POP_BATCH = 10;
     private static final int POP_WAIT_MS = 5;
     private static final int WARMUP_MS = 2_000;
@@ -212,7 +212,9 @@ public class QueueBenchmark {
         String queueName = "bench_" + UUID.randomUUID();
         GenericObjectPoolConfig<Connection> poolConfig = new GenericObjectPoolConfig<>();
         poolConfig.setMinIdle(4);
-        poolConfig.setMaxTotal(64);
+        // Scale the pool with the poller count so connection starvation does not mask the
+        // algorithmic behavior we are trying to measure.
+        poolConfig.setMaxTotal(Math.max(64, CONSUMER_THREADS + 16));
         JedisPooled pooled = new JedisPooled(poolConfig, HOST, PORT);
         ExecutorService refillPool = Executors.newFixedThreadPool(2);
         ConductorRedisQueue queue =

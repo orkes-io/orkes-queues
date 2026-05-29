@@ -38,9 +38,15 @@ public abstract class QueueMonitor {
     private final AtomicInteger pollCount = new AtomicInteger(0);
 
     /**
-     * Guards against a "refill stampede": when many consumer threads find the cache empty at the
-     * same time, only one of them should issue the (relatively expensive) Redis poll. The others
-     * skip the poll and wait on {@link #peekedMessages}, which the in-flight refill populates.
+     * Guards the <em>synchronous</em> cold-path refill against a "stampede": when many consumer
+     * threads find the cache empty at the same time, only one of them should block on the
+     * (relatively expensive) Redis poll. The others skip it and wait on {@link #peekedMessages},
+     * which the in-flight refill populates. This matters most for sparse/empty queues, where the
+     * stampede otherwise produces one wasted poll per consumer per poll cycle.
+     *
+     * <p>Note: the warm-path async refill is intentionally <em>not</em> guarded by this flag —
+     * under high concurrency that background refill is what keeps a hot queue's buffer deep, and it
+     * is already bounded by the executor's pool size.
      */
     private final AtomicBoolean refillInProgress = new AtomicBoolean(false);
 
@@ -87,7 +93,13 @@ public abstract class QueueMonitor {
             // duplicate (and redelivery-prone) Redis poll.
             refillSynchronouslyIfIdle();
         } else if (peekedMessages.size() < pendingCount) {
-            triggerAsyncRefill();
+            // Warm path: the cache has data but is running low. Keep the original unguarded async
+            // submit here — under high concurrency this is what keeps a hot queue's buffer deep,
+            // and it is already bounded by the executor's pool size.
+            try {
+                executorService.submit(this::__peekedMessages);
+            } catch (RejectedExecutionException ignored) {
+            }
         }
 
         long now = clock.millis();
@@ -148,28 +160,6 @@ public abstract class QueueMonitor {
             try {
                 __peekedMessages();
             } finally {
-                refillInProgress.set(false);
-            }
-        }
-    }
-
-    /**
-     * Submits a background refill, but only if none is already in flight. The flag is held until
-     * the submitted task completes so that concurrent {@code pop} calls collapse onto a single
-     * Redis poll.
-     */
-    private void triggerAsyncRefill() {
-        if (refillInProgress.compareAndSet(false, true)) {
-            try {
-                executorService.submit(
-                        () -> {
-                            try {
-                                __peekedMessages();
-                            } finally {
-                                refillInProgress.set(false);
-                            }
-                        });
-            } catch (RejectedExecutionException rejected) {
                 refillInProgress.set(false);
             }
         }

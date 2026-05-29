@@ -18,7 +18,7 @@ dependencies {
 test {
     useJUnitPlatform()
     // Forward benchmark opt-in properties to the forked test JVM (see QueueBenchmark).
-    ['bench', 'bench.redis.host', 'bench.redis.port', 'bench.out'].each { k ->
+    ['bench', 'bench.redis.host', 'bench.redis.port', 'bench.out', 'bench.threads'].each { k ->
         if (System.getProperty(k) != null) {
             systemProperty k, System.getProperty(k)
         }
