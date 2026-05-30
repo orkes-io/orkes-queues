@@ -245,19 +245,35 @@ public abstract class QueueMonitor {
         try {
             final long deadlineNanos = System.nanoTime() + timeUnit.toNanos(waitTime);
 
-            // Make sure the poller is running to satisfy the demand we just registered. Only
-            // preempt
-            // a pending idle backoff if its next poll would land AFTER our deadline — otherwise the
-            // scheduled poll already covers us. This keeps the canonical one-worker-per-queue case
-            // (poll lands within waitTime) from waking on every pop, while still serving a short
-            // wait that is stuck behind a long backoff.
-            ensurePollerRunning();
-            if (peekedMessages.isEmpty() && nextPollDueNanos - deadlineNanos > 0) {
-                wakePoller();
-            }
-
             // Drain whatever is already cached (cheap, non-blocking).
             drainInto(messages, count);
+
+            // Inline fast-path. If we still need messages, try to fetch on THIS consumer thread
+            // instead of handing off to a poller thread and parking on the cache. The decoupled
+            // poller's thread hand-off only pays for itself when MANY consumers share a queue (it
+            // collapses their would-be stampede into a single poller); with one consumer per queue
+            // —
+            // the canonical Conductor topology — that hand-off is pure overhead (two thread
+            // wake-ups
+            // per message). This mirrors main, which fetches inline when the cache is empty.
+            // Winning
+            // the single-flight slot (activePollers 0→1) keeps it duplicate-safe: if a poller is
+            // already active the CAS fails and we fall through to the normal cache wait, so the
+            // stampede protection is preserved.
+            if (messages.isEmpty() && inlineFetchIfIdle()) {
+                drainInto(messages, count - messages.size());
+            }
+
+            // Make sure a poller is running to satisfy the demand we registered (if the inline
+            // fetch
+            // didn't drain the queue), and preempt a long idle backoff that would land after our
+            // deadline so a short-wait pop isn't stuck behind it.
+            if (messages.size() < count) {
+                ensurePollerRunning();
+                if (peekedMessages.isEmpty() && nextPollDueNanos - deadlineNanos > 0) {
+                    wakePoller();
+                }
+            }
 
             // Wait-loop. We long-poll up to `waitTime` for the FIRST message, but once we have at
             // least one we only briefly "gather" the rest of an arriving batch (BATCH_GATHER_NANOS)
@@ -379,6 +395,56 @@ public abstract class QueueMonitor {
             w = DEFAULT_MAX_BACKOFF_MS;
         }
         return Math.max(MIN_BACKOFF_MS, Math.min(w, BACKOFF_CEILING_MS));
+    }
+
+    /**
+     * Fetches one batch on the CALLING (consumer) thread when no poller is running, instead of
+     * waking an executor poller and parking. Returns true if a fetch was performed (the slot was
+     * won). Duplicate-safe: it claims the single-flight slot ({@code activePollers} 0→1) just like
+     * a poller, so at most one fetcher per queue runs at a time; if a poller is already active or
+     * another consumer is mid-fetch, the CAS fails and we return false (caller waits on the cache).
+     *
+     * <p>If, after the inline fetch, the queue still has outstanding demand it could not satisfy
+     * (the cache could not be filled — a hot queue with more consumers waiting), the poller chain
+     * is handed off to the executor to keep serving; otherwise the slot is released. This makes the
+     * single-consumer path a plain inline poll (no thread hand-off) while a multi-consumer hot
+     * queue still escalates to the decoupled poller.
+     */
+    private boolean inlineFetchIfIdle() {
+        if (!cached || liveDemand.get() <= 0) {
+            return false;
+        }
+        if (!activePollers.compareAndSet(0, 1)) {
+            return false; // a poller (or another inline fetcher) already holds the slot
+        }
+        boolean handedOff = false;
+        try {
+            int unfilled = effectiveDemand() - peekedMessages.size();
+            if (unfilled > 0) {
+                int fetched = fetchIntoCache(Math.min(MAX_POLL_COUNT, unfilled));
+                if (fetched > 0) {
+                    lastProductiveMs = clock.millis();
+                    currentBackoffMs = MIN_BACKOFF_MS;
+                    // More still wanted than we just cached (other consumers waiting): keep a
+                    // poller
+                    // going on the executor rather than starving them.
+                    if (fetched >= unfilled && effectiveDemand() - peekedMessages.size() > 0) {
+                        submitPoll(); // continues holding the slot we own
+                        handedOff = true;
+                    }
+                }
+            }
+            return true;
+        } finally {
+            if (!handedOff) {
+                // Release the single-flight slot. We deliberately do NOT revive a poller here: if
+                // this pop still needs messages it calls ensurePollerRunning() itself, and if it is
+                // satisfied we must not leave a background poller spinning (that empty-poll
+                // overhead
+                // is exactly what this fast-path removes for the single-consumer case).
+                activePollers.decrementAndGet();
+            }
+        }
     }
 
     /**
