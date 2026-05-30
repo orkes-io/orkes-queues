@@ -589,19 +589,23 @@ public abstract class AbstractConductorQueueTest {
         assertEquals(0, q.readySize());
         assertEquals(0, q.oldestReadyAgeMillis());
 
-        // 6 due-now + 4 delayed (5s out). The lag/ready metrics read the ZSET score, which is a
-        // delivery timestamp for these messages: timeout=0,priority=0 scores to ~now (due now), and
-        // timeout=5000 scores to ~now+5s (not yet due). readySize() counts only those with
+        // 6 due-now + 4 delayed. The lag/ready metrics read the ZSET score, which is a delivery
+        // timestamp for these messages: timeout=0,priority=0 scores to ~now (due now), and a large
+        // timeout scores far in the future (not due). readySize() counts only those with
         // score <= now; size() counts all. (Note: a timeout=0 message with priority>0 is scored by
         // its raw priority value, not a timestamp — so we use priority 0 here to keep the score a
-        // timestamp and the lag meaningful.)
+        // timestamp and the lag meaningful.) The delay is intentionally huge (10 min) so the
+        // delayed
+        // messages cannot become due mid-test on a slow/loaded runner, which would otherwise make
+        // the readySize/lag assertions flaky.
+        final long farFutureMs = 600_000; // 10 minutes
         List<QueueMessage> messages = new LinkedList<>();
         for (int i = 0; i < 6; i++) {
             messages.add(
                     new QueueMessage("due-" + i, "", 0, 0)); // timeout=0, priority=0 → score≈now
         }
         for (int i = 0; i < 4; i++) {
-            messages.add(new QueueMessage("delayed-" + i, "", 5000, 0)); // score≈now+5s
+            messages.add(new QueueMessage("delayed-" + i, "", farFutureMs, 0)); // score≈now+10min
         }
         q.push(messages);
 
@@ -610,15 +614,16 @@ public abstract class AbstractConductorQueueTest {
 
         // The head of the ready set was due ~now, so its lag is small but non-negative. Sleep a
         // beat
-        // so it is unambiguously positive, and assert it reflects the ready head (tens of ms), not
-        // the 5s-delayed messages.
+        // so it is unambiguously positive, and assert it reflects the ready head, not the
+        // far-future-delayed messages.
         Uninterruptibles.sleepUninterruptibly(Duration.ofMillis(50));
         long lag = q.oldestReadyAgeMillis();
         assertTrue(lag >= 0, "lag should be non-negative, was " + lag);
         assertTrue(
-                lag < 5000, "lag reflects the due head, not the 5s-delayed messages; was " + lag);
+                lag < farFutureMs,
+                "lag reflects the due head, not the delayed messages; was " + lag);
 
-        // Drain the ready ones; the delayed ones are still not due, so readySize → 0.
+        // Drain the ready ones; the delayed ones are still far from due, so readySize → 0.
         List<QueueMessage> popped = q.pop(6, 500, TimeUnit.MILLISECONDS);
         for (QueueMessage m : popped) {
             q.ack(m.getId());
