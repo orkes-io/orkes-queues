@@ -12,15 +12,22 @@
  */
 package io.orkes.conductor.mq.redis;
 
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import com.netflix.conductor.redis.jedis.JedisCommands;
+
 import lombok.extern.slf4j.Slf4j;
 import redis.clients.jedis.JedisPooled;
+import redis.clients.jedis.exceptions.JedisNoScriptException;
 
 /**
  * Cross-process, event-driven queue wakeup using a Redis list "doorbell".
@@ -55,6 +62,9 @@ public class RedisDoorbell {
     private final List<Set<String>> shardKeys;
     private final ExecutorService listeners;
     private volatile boolean running = true;
+
+    /** SHA of the combined enqueue+ring script, loaded lazily on first {@link #pushDueAndRing}. */
+    private volatile String pushSha;
 
     /** Diagnostic: number of wake tokens received and dispatched. */
     public final java.util.concurrent.atomic.AtomicLong wakesDelivered =
@@ -122,6 +132,44 @@ public class RedisDoorbell {
             jedis.ltrim(k, 0, 0);
         } catch (Exception e) {
             log.debug("doorbell publish failed for {}: {}", queueName, e.getMessage());
+        }
+    }
+
+    /**
+     * Producer side: enqueue {@code scores} (member &rarr; score) and, when {@code ring}, ring the
+     * doorbell — in a single atomic round-trip (ZADD + LPUSH + LTRIM in one script) instead of
+     * three. Runs on the caller's connection so the enqueue uses the queue's own pool. Standalone
+     * Redis only (the script spans the queue and doorbell keys, which are in different cluster
+     * slots).
+     */
+    public void pushDueAndRing(
+            JedisCommands conn, String queueName, Map<String, Double> scores, boolean ring) {
+        List<String> keys = Arrays.asList(queueName, doorKey(queueName));
+        List<String> argv = new ArrayList<>(scores.size() * 2 + 1);
+        argv.add(ring ? "1" : "0");
+        for (Map.Entry<String, Double> e : scores.entrySet()) {
+            argv.add(String.valueOf(e.getValue())); // score
+            argv.add(e.getKey()); // member
+        }
+        try {
+            if (pushSha == null) {
+                pushSha = loadPushScript(conn);
+            }
+            conn.evalsha(pushSha, keys, argv);
+        } catch (JedisNoScriptException noScript) {
+            // Redis was restarted / flushed its script cache — reload and retry once.
+            pushSha = loadPushScript(conn);
+            conn.evalsha(pushSha, keys, argv);
+        }
+    }
+
+    private String loadPushScript(JedisCommands conn) {
+        try (InputStream stream = getClass().getResourceAsStream("/push_doorbell.lua")) {
+            byte[] script = stream.readAllBytes();
+            byte[] sha = conn.scriptLoad(script, "".getBytes(StandardCharsets.UTF_8));
+            return new String(sha, StandardCharsets.UTF_8);
+        } catch (Exception e) {
+            throw new RuntimeException("failed to load push_doorbell.lua", e);
         }
     }
 
