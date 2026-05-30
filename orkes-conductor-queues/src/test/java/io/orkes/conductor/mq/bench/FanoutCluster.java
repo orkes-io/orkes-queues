@@ -67,6 +67,7 @@ public class FanoutCluster {
         int pollerThreads = Integer.getInteger("bench.cluster.pollerThreads", 64);
         long warmupMs = Integer.getInteger("bench.cluster.warmupMs", 4_000);
         long measureMs = Integer.getInteger("bench.cluster.measureMs", 10_000);
+        boolean doorbell = Boolean.getBoolean("bench.cluster.doorbell");
         String run = UUID.randomUUID().toString().substring(0, 8);
 
         // ---- launch the producer in a separate JVM ----
@@ -84,7 +85,8 @@ public class FanoutCluster {
                         String.valueOf(queues),
                         String.valueOf(ratePerQueue),
                         run,
-                        String.valueOf(publishers));
+                        String.valueOf(publishers),
+                        String.valueOf(doorbell));
         pb.redirectOutput(new File("/tmp/fanout-cluster-publisher.log"));
         pb.redirectError(new File("/tmp/fanout-cluster-publisher.log"));
         Process producer = pb.start();
@@ -116,36 +118,68 @@ public class FanoutCluster {
         Runnable[] tasks = new Runnable[totalWorkers];
         for (int i = 0; i < totalWorkers; i++) {
             final ConductorRedisQueue q = qs.get(i % queues);
+            final String doorKey = "door_" + run + "_" + (i % queues);
             tasks[i] =
-                    () -> {
-                        long[] lat = new long[200_000];
-                        int n = 0;
-                        while (running.get()) {
-                            List<QueueMessage> popped = q.pop(batch, waitMs, TimeUnit.MILLISECONDS);
-                            long nowMs = System.currentTimeMillis();
-                            popCalls.incrementAndGet();
-                            if (popped.isEmpty()) {
-                                emptyPops.incrementAndGet();
-                                continue;
+                    doorbell
+                            ? () -> {
+                                // Doorbell consumer: block on Redis (BLPOP). The token is delivered
+                                // the instant the producer LPUSHes it — no timing-miss window.
+                                long[] lat = new long[200_000];
+                                int n = 0;
+                                while (running.get()) {
+                                    List<String> res = pooled.blpop(1, doorKey);
+                                    long nowMs = System.currentTimeMillis();
+                                    popCalls.incrementAndGet();
+                                    if (res == null || res.size() < 2) {
+                                        emptyPops.incrementAndGet();
+                                        continue;
+                                    }
+                                    String id = res.get(1);
+                                    int c = id.indexOf(':');
+                                    if (c > 0 && n < lat.length) {
+                                        try {
+                                            lat[n++] = nowMs - Long.parseLong(id.substring(0, c));
+                                        } catch (NumberFormatException ignored) {
+                                        }
+                                    }
+                                    if (seen.putIfAbsent(id, Boolean.TRUE) != null) {
+                                        duplicates.incrementAndGet();
+                                    }
+                                    consumed.incrementAndGet();
+                                }
+                                latencyBuffers.add(java.util.Arrays.copyOf(lat, n));
                             }
-                            for (QueueMessage m : popped) {
-                                String id = m.getId();
-                                int c = id.indexOf(':');
-                                if (c > 0 && n < lat.length) {
-                                    try {
-                                        lat[n++] = nowMs - Long.parseLong(id.substring(0, c));
-                                    } catch (NumberFormatException ignored) {
+                            : () -> {
+                                long[] lat = new long[200_000];
+                                int n = 0;
+                                while (running.get()) {
+                                    List<QueueMessage> popped =
+                                            q.pop(batch, waitMs, TimeUnit.MILLISECONDS);
+                                    long nowMs = System.currentTimeMillis();
+                                    popCalls.incrementAndGet();
+                                    if (popped.isEmpty()) {
+                                        emptyPops.incrementAndGet();
+                                        continue;
+                                    }
+                                    for (QueueMessage m : popped) {
+                                        String id = m.getId();
+                                        int c = id.indexOf(':');
+                                        if (c > 0 && n < lat.length) {
+                                            try {
+                                                lat[n++] =
+                                                        nowMs - Long.parseLong(id.substring(0, c));
+                                            } catch (NumberFormatException ignored) {
+                                            }
+                                        }
+                                        if (seen.putIfAbsent(id, Boolean.TRUE) != null) {
+                                            duplicates.incrementAndGet();
+                                        }
+                                        consumed.incrementAndGet();
+                                        q.ack(id);
                                     }
                                 }
-                                if (seen.putIfAbsent(id, Boolean.TRUE) != null) {
-                                    duplicates.incrementAndGet();
-                                }
-                                consumed.incrementAndGet();
-                                q.ack(id);
-                            }
-                        }
-                        latencyBuffers.add(java.util.Arrays.copyOf(lat, n));
-                    };
+                                latencyBuffers.add(java.util.Arrays.copyOf(lat, n));
+                            };
         }
 
         for (Runnable t : tasks) workers.submit(t);
@@ -192,6 +226,7 @@ public class FanoutCluster {
                         waitMs,
                         ratePerQueue,
                         (long) queues * ratePerQueue));
+        r.append(String.format("mode=%s%n", doorbell ? "BLPOP-doorbell" : "timed-poll"));
         r.append(String.format("measure=%.1fs%n", elapsedSec));
         r.append(String.format("consumed:    %,d  (%,.0f /sec)%n", cons, cons / elapsedSec));
         r.append(String.format("pop() calls: %,d%n", popCalls.get()));

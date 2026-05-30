@@ -49,6 +49,7 @@ public final class FanoutClusterPublisher {
         int ratePerQueue = Integer.parseInt(args[3]);
         String run = args[4];
         int publishers = args.length > 5 ? Integer.parseInt(args[5]) : 4;
+        boolean doorbell = args.length > 6 && Boolean.parseBoolean(args[6]);
         long totalRate = (long) queues * ratePerQueue;
 
         GenericObjectPoolConfig<Connection> poolConfig = new GenericObjectPoolConfig<>();
@@ -79,7 +80,14 @@ public final class FanoutClusterPublisher {
                                 int qi = Math.floorMod(rr.getAndIncrement(), queues);
                                 String id = System.currentTimeMillis() + ":" + UUID.randomUUID();
                                 try {
-                                    qs.get(qi).push(List.of(new QueueMessage(id, "")));
+                                    if (doorbell) {
+                                        // Doorbell wake-latency probe: LPUSH a timestamped token
+                                        // that a BLPOP-blocked consumer receives the instant it is
+                                        // written (Redis-driven, no timing miss).
+                                        pooled.lpush("door_" + run + "_" + qi, id);
+                                    } else {
+                                        qs.get(qi).push(List.of(new QueueMessage(id, "")));
+                                    }
                                 } catch (Exception ignored) {
                                 }
                                 mine++;
