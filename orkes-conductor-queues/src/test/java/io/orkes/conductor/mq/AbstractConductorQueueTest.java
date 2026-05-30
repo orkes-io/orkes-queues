@@ -630,25 +630,22 @@ public abstract class AbstractConductorQueueTest {
     }
 
     /**
-     * Regression guard for the Lua {@code unpack} stack-overflow bug: a large push (combined
-     * enqueue script on the doorbell path) and a large claim (rescore script) both batch their ZADD
-     * args, and an un-chunked {@code unpack} overflows Lua's stack (LUAI_MAXCSTACK) past a few
-     * thousand members. Push well past that threshold and assert everything stores, claims, and
-     * acks with no duplicates or losses.
-     *
-     * <p>Runs on every topology (standalone, cluster, sentinel) and both the plain and
-     * doorbell-enabled variants, so it covers {@code pop_batch.lua} and {@code push_doorbell.lua}.
+     * Regression guard for the Lua {@code unpack} stack-overflow bug on the <b>enqueue</b> path: a
+     * large push builds one big ZADD, and an un-chunked {@code unpack} overflows Lua's stack
+     * (LUAI_MAXCSTACK) past a few thousand members. On the doorbell-enabled variants the push runs
+     * through {@code push_doorbell.lua}, so pushing well past that threshold in a single call
+     * guards its chunking. Then drains everything to prove the large batch is fully retrievable
+     * with no duplicates or losses. Runs on every topology and both the plain and doorbell
+     * variants.
      */
     @Test
     public void testLargeBatchPushAndDrain() {
-        // 5000 > the ~3500-member unpack overflow threshold, and > MAX_POLL_COUNT (1000), so the
-        // claim runs several chunked fetches.
+        // 5000 > the ~3500-member unpack overflow threshold, so a single push that goes through the
+        // combined ZADD+ring Lua (doorbell variants) exercises its chunked enqueue.
         final int count = 5000;
         ConductorQueue q = createQueue("largebatch_" + UUID.randomUUID());
         q.flush();
 
-        // Single large push — exercises the enqueue ZADD batching (and the combined ZADD+ring Lua
-        // when this queue is doorbell-enabled).
         List<QueueMessage> messages = new ArrayList<>(count);
         Set<String> ids = new HashSet<>(count * 2);
         for (int i = 0; i < count; i++) {
@@ -660,16 +657,31 @@ public abstract class AbstractConductorQueueTest {
         assertEquals(count, q.size(), "all " + count + " messages should be stored by one push");
         assertEquals(count, q.readySize(), "all should be due now");
 
-        // Drain via repeated pops (the cached path caps each fetch at MAX_POLL_COUNT, so several
-        // claims are needed — each claim rescores a large batch through the chunked ZADD).
+        // Drain everything. The cache is depth-capped, so each pop returns a slice and many pops
+        // are
+        // needed; batch-ack each slice (one multi-member ZREM) to keep the round-trip count low.
+        // Termination is progress-based (not wall-clock): we stop when all are seen, or when a pop
+        // returns empty AND Redis confirms the queue is drained — so it cannot hang or flake under
+        // a
+        // slow/loaded runner. The iteration cap is a generous backstop well above the ~count pops
+        // that could ever be needed.
         Set<String> seen = new HashSet<>(count * 2);
-        long deadline = System.currentTimeMillis() + 30_000;
-        while (seen.size() < count && System.currentTimeMillis() < deadline) {
-            List<QueueMessage> popped = q.pop(count, 500, TimeUnit.MILLISECONDS);
+        int maxIterations = count + 100;
+        int iterations = 0;
+        while (seen.size() < count && iterations++ < maxIterations) {
+            List<QueueMessage> popped = q.pop(count, 200, TimeUnit.MILLISECONDS);
+            if (popped.isEmpty()) {
+                if (q.size() == 0) {
+                    break; // nothing left to deliver
+                }
+                continue; // messages still pending (claimed/unack window) — keep going
+            }
+            List<String> ackIds = new ArrayList<>(popped.size());
             for (QueueMessage m : popped) {
                 assertTrue(seen.add(m.getId()), "duplicate delivery of " + m.getId());
-                q.ack(m.getId());
+                ackIds.add(m.getId());
             }
+            q.ackAll(ackIds);
         }
 
         assertEquals(count, seen.size(), "every message should be delivered exactly once");
