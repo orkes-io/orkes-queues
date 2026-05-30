@@ -589,16 +589,19 @@ public abstract class AbstractConductorQueueTest {
         assertEquals(0, q.readySize());
         assertEquals(0, q.oldestReadyAgeMillis());
 
-        // 6 due-now messages + 4 delayed (5s out). readySize counts only the due ones; size() is
-        // all.
+        // 6 due-now + 4 delayed (5s out). The lag/ready metrics read the ZSET score, which is a
+        // delivery timestamp for these messages: timeout=0,priority=0 scores to ~now (due now), and
+        // timeout=5000 scores to ~now+5s (not yet due). readySize() counts only those with
+        // score <= now; size() counts all. (Note: a timeout=0 message with priority>0 is scored by
+        // its raw priority value, not a timestamp — so we use priority 0 here to keep the score a
+        // timestamp and the lag meaningful.)
         List<QueueMessage> messages = new LinkedList<>();
         for (int i = 0; i < 6; i++) {
-            messages.add(new QueueMessage("due-" + i, ""));
+            messages.add(
+                    new QueueMessage("due-" + i, "", 0, 0)); // timeout=0, priority=0 → score≈now
         }
         for (int i = 0; i < 4; i++) {
-            QueueMessage delayed = new QueueMessage("delayed-" + i, "");
-            delayed.setTimeout(5000);
-            messages.add(delayed);
+            messages.add(new QueueMessage("delayed-" + i, "", 5000, 0)); // score≈now+5s
         }
         q.push(messages);
 
@@ -607,11 +610,13 @@ public abstract class AbstractConductorQueueTest {
 
         // The head of the ready set was due ~now, so its lag is small but non-negative. Sleep a
         // beat
-        // to make it unambiguously positive.
+        // so it is unambiguously positive, and assert it reflects the ready head (tens of ms), not
+        // the 5s-delayed messages.
         Uninterruptibles.sleepUninterruptibly(Duration.ofMillis(50));
         long lag = q.oldestReadyAgeMillis();
         assertTrue(lag >= 0, "lag should be non-negative, was " + lag);
-        assertTrue(lag < 5000, "only due messages count toward lag, not the 5s-delayed ones");
+        assertTrue(
+                lag < 5000, "lag reflects the due head, not the 5s-delayed messages; was " + lag);
 
         // Drain the ready ones; the delayed ones are still not due, so readySize → 0.
         List<QueueMessage> popped = q.pop(6, 500, TimeUnit.MILLISECONDS);
