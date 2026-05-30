@@ -45,8 +45,12 @@ import redis.clients.jedis.JedisSentineled;
 public class ConductorRedisSentinelDoorbellQueueTest extends AbstractConductorQueueTest {
 
     private static final String queueName = "sentinel_doorbell_test";
-    private static final int REDIS_PORT = 6399;
-    private static final int SENTINEL_PORT = 26399;
+    // Distinct fixed ports from ConductorRedisSentinelQueueTest (6399/26399): both sentinel tests
+    // run
+    // in the same build, and fixed host-port mappings cannot collide or the second container fails
+    // to start.
+    private static final int REDIS_PORT = 6398;
+    private static final int SENTINEL_PORT = 26398;
 
     private static FixedPortContainer sentinelRedis =
             new FixedPortContainer(DockerImageName.parse("redis:7.0-alpine"));
