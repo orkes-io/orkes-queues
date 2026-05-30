@@ -10,7 +10,7 @@
  * an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License for the
  * specific language governing permissions and limitations under the License.
  */
-package io.orkes.conductor.mq.bench;
+package io.orkes.conductor.mq;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -19,21 +19,23 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
-import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.utility.DockerImageName;
 
 import com.netflix.conductor.redis.jedis.UnifiedJedisCommands;
 
-import io.orkes.conductor.mq.QueueMessage;
 import io.orkes.conductor.mq.redis.RedisDoorbell;
 import io.orkes.conductor.mq.redis.single.ConductorRedisQueue;
 
 import redis.clients.jedis.Connection;
-import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPooled;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -53,38 +55,45 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>Asserts every one of the 1,000 pre-existing messages is delivered exactly once — no
  * duplicates, no misses — proving a doorbell-enabled consumer reads a backlog written without a
- * doorbell. Skipped unless {@code -Dbench=true} with Redis reachable at {@code
- * bench.redis.host:bench.redis.port} (defaults {@code localhost:6399}).
+ * doorbell. Uses TestContainers, so it always runs.
  */
 public class DoorbellBackwardsCompatTest {
-
-    private static final String HOST = System.getProperty("bench.redis.host", "localhost");
-    private static final int PORT = Integer.getInteger("bench.redis.port", 6399);
 
     private static final int QUEUES = 10;
     private static final int MESSAGES_PER_QUEUE = 100;
     private static final int TOTAL = QUEUES * MESSAGES_PER_QUEUE;
 
+    public static GenericContainer<?> redis =
+            new GenericContainer<>(DockerImageName.parse("redis:6.2.6-alpine"))
+                    .withExposedPorts(6379);
+
+    private static JedisPooled pooled;
+    private static UnifiedJedisCommands cmds;
+
+    @BeforeAll
+    public static void setUp() {
+        redis.start();
+        GenericObjectPoolConfig<Connection> poolConfig = new GenericObjectPoolConfig<>();
+        poolConfig.setMaxTotal(64);
+        poolConfig.setMaxIdle(64);
+        pooled = new JedisPooled(poolConfig, redis.getHost(), redis.getFirstMappedPort());
+        cmds = new UnifiedJedisCommands(pooled);
+    }
+
+    @AfterAll
+    public static void tearDown() {
+        if (pooled != null) {
+            pooled.close();
+        }
+    }
+
     @Test
     public void doorbellConsumerDrainsPreExistingBacklog() throws Exception {
-        Assumptions.assumeTrue(Boolean.getBoolean("bench"), "set -Dbench=true to run");
-        try (Jedis j = new Jedis(HOST, PORT)) {
-            Assumptions.assumeTrue("PONG".equalsIgnoreCase(j.ping()), "redis not reachable");
-        } catch (Exception e) {
-            Assumptions.abort("redis not reachable: " + e.getMessage());
-        }
-
         String run = UUID.randomUUID().toString().substring(0, 8);
         List<String> queueNames = new ArrayList<>(QUEUES);
         for (int i = 0; i < QUEUES; i++) {
             queueNames.add("bc_" + run + "_" + i);
         }
-
-        GenericObjectPoolConfig<Connection> poolConfig = new GenericObjectPoolConfig<>();
-        poolConfig.setMaxTotal(64);
-        poolConfig.setMaxIdle(64);
-        JedisPooled pooled = new JedisPooled(poolConfig, HOST, PORT);
-        UnifiedJedisCommands cmds = new UnifiedJedisCommands(pooled);
 
         // ---- Phase 1: produce with the PLAIN (no-doorbell) constructor, as today's servers do
         // ----
@@ -156,7 +165,6 @@ public class DoorbellBackwardsCompatTest {
         for (String name : queueNames) {
             remaining += pooled.zcard(name);
         }
-        pooled.close();
 
         assertEquals(0, duplicates.get(), "no message should be delivered more than once");
         assertEquals(TOTAL, seen.size(), "every distinct message should be delivered exactly once");
@@ -165,7 +173,7 @@ public class DoorbellBackwardsCompatTest {
         assertEquals(0, remaining, "all messages should be acked/removed from Redis");
     }
 
-    private static java.util.concurrent.ThreadFactory daemon(String name) {
+    private static ThreadFactory daemon(String name) {
         return r -> {
             Thread t = new Thread(r, name);
             t.setDaemon(true);

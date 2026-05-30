@@ -34,8 +34,12 @@ without it is a no-op) and `-Dbench.out=<file>` to also write the report to a fi
 | `FanoutBench` | `-Dbench.fanout=true` | Many queues, one worker each (the canonical Conductor topology), in one JVM. Public-API only, so it runs on `main` too. |
 | `FanoutCluster` | `-Dbench.cluster=true` | **Cross-JVM** fan-out: producer in a child JVM, consumers here — the only way to measure true cross-process delivery latency (and the `BLPOP` doorbell). |
 | `BenchCompare` | `-Dbench.cmp=true` | Portable, public-API-only fan-out for an apples-to-apples **`main` vs branch** comparison; reads Redis ops from `INFO commandstats`. |
-| `LocalRedisFunctionalTest` | `-Dbench=true` | Not a benchmark — runs the full correctness suite against a local Redis (no containers). Use it to confirm a change is still correct. |
-| `LocalRedisDoorbellFunctionalTest` | `-Dbench=true` | The same correctness suite with every queue wired to a `RedisDoorbell`, so the combined ZADD+ring enqueue script is validated (priority/delay ordering preserved). |
+
+> Correctness is covered by the always-on TestContainers integration tests in the parent package
+> (`io.orkes.conductor.mq`): `ConductorRedisQueueTest`, `ConductorRedisClusterQueueTest`,
+> `ConductorRedisSentinelQueueTest`, the doorbell variants `ConductorRedisQueueDoorbellTest` /
+> `ConductorRedisSentinelDoorbellQueueTest`, and `DoorbellBackwardsCompatTest`. Those run on every
+> build (no flag); the harnesses below are load/throughput tools and stay gated.
 
 ### `QueueBenchmark` — single queue, scoring + load
 

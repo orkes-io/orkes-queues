@@ -26,7 +26,7 @@ import java.util.concurrent.Executors;
 import com.netflix.conductor.redis.jedis.JedisCommands;
 
 import lombok.extern.slf4j.Slf4j;
-import redis.clients.jedis.JedisPooled;
+import redis.clients.jedis.UnifiedJedis;
 import redis.clients.jedis.exceptions.JedisNoScriptException;
 
 /**
@@ -56,7 +56,7 @@ public class RedisDoorbell {
     private static final String PREFIX = "conductor.queue.door.";
     private static final int BLPOP_TIMEOUT_SEC = 1;
 
-    private final JedisPooled jedis;
+    private final UnifiedJedis jedis;
     private final int shards;
     private final ConcurrentHashMap<String, QueueMonitor> registry = new ConcurrentHashMap<>();
     private final List<Set<String>> shardKeys;
@@ -75,7 +75,7 @@ public class RedisDoorbell {
      * @param shards number of listener threads/connections (each watches a partition of queues); 0
      *     for a publish-only doorbell (e.g. on a producer-only process)
      */
-    public RedisDoorbell(JedisPooled jedis, int shards) {
+    public RedisDoorbell(UnifiedJedis jedis, int shards) {
         this.jedis = jedis;
         this.shards = Math.max(0, shards);
         this.shardKeys = new ArrayList<>();
