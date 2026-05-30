@@ -628,4 +628,87 @@ public abstract class AbstractConductorQueueTest {
 
         q.flush();
     }
+
+    /**
+     * Regression guard for the Lua {@code unpack} stack-overflow bug: a large push (combined
+     * enqueue script on the doorbell path) and a large claim (rescore script) both batch their ZADD
+     * args, and an un-chunked {@code unpack} overflows Lua's stack (LUAI_MAXCSTACK) past a few
+     * thousand members. Push well past that threshold and assert everything stores, claims, and
+     * acks with no duplicates or losses.
+     *
+     * <p>Runs on every topology (standalone, cluster, sentinel) and both the plain and
+     * doorbell-enabled variants, so it covers {@code pop_batch.lua} and {@code push_doorbell.lua}.
+     */
+    @Test
+    public void testLargeBatchPushAndDrain() {
+        // 5000 > the ~3500-member unpack overflow threshold, and > MAX_POLL_COUNT (1000), so the
+        // claim runs several chunked fetches.
+        final int count = 5000;
+        ConductorQueue q = createQueue("largebatch_" + UUID.randomUUID());
+        q.flush();
+
+        // Single large push — exercises the enqueue ZADD batching (and the combined ZADD+ring Lua
+        // when this queue is doorbell-enabled).
+        List<QueueMessage> messages = new ArrayList<>(count);
+        Set<String> ids = new HashSet<>(count * 2);
+        for (int i = 0; i < count; i++) {
+            String id = "lb-" + i + "-" + UUID.randomUUID();
+            ids.add(id);
+            messages.add(new QueueMessage(id, "", 0, 0)); // due now, timestamp score
+        }
+        q.push(messages);
+        assertEquals(count, q.size(), "all " + count + " messages should be stored by one push");
+        assertEquals(count, q.readySize(), "all should be due now");
+
+        // Drain via repeated pops (the cached path caps each fetch at MAX_POLL_COUNT, so several
+        // claims are needed — each claim rescores a large batch through the chunked ZADD).
+        Set<String> seen = new HashSet<>(count * 2);
+        long deadline = System.currentTimeMillis() + 30_000;
+        while (seen.size() < count && System.currentTimeMillis() < deadline) {
+            List<QueueMessage> popped = q.pop(count, 500, TimeUnit.MILLISECONDS);
+            for (QueueMessage m : popped) {
+                assertTrue(seen.add(m.getId()), "duplicate delivery of " + m.getId());
+                q.ack(m.getId());
+            }
+        }
+
+        assertEquals(count, seen.size(), "every message should be delivered exactly once");
+        assertEquals(ids, seen, "delivered ids should match exactly what was pushed");
+        assertEquals(0, q.size(), "queue should be empty after acking all");
+
+        q.flush();
+    }
+
+    /**
+     * Same overflow guard but on the non-cached ({@code popStrict}) path used by rate-limited
+     * queues, where {@code pop(count)} passes the caller's count straight to the claim script with
+     * no MAX_POLL_COUNT cap — the exact path that triggered the unpack overflow. A single {@code
+     * pop(5000)} must claim the whole batch in one call without error.
+     */
+    @Test
+    public void testLargeBatchRateLimitedSingleClaim() {
+        final int count = 5000;
+        ConductorQueue q = createQueue("RATE_LIMITED_WORKFLOW_largebatch_" + UUID.randomUUID());
+        q.flush();
+
+        List<QueueMessage> messages = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            messages.add(new QueueMessage("rl-" + i + "-" + UUID.randomUUID(), "", 0, 0));
+        }
+        q.push(messages);
+        assertEquals(count, q.size());
+
+        // Uncapped single claim of the whole batch — would throw "too many results to unpack"
+        // before the chunking fix.
+        List<QueueMessage> popped = q.pop(count, 1, TimeUnit.SECONDS);
+        assertEquals(count, popped.size(), "a single pop(count) should claim the entire batch");
+        Set<String> ids = new HashSet<>();
+        for (QueueMessage m : popped) {
+            assertTrue(ids.add(m.getId()), "duplicate in single claim: " + m.getId());
+            q.ack(m.getId());
+        }
+        assertEquals(0, q.size(), "all claimed messages should ack cleanly");
+
+        q.flush();
+    }
 }
