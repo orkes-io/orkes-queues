@@ -68,6 +68,7 @@ public class FanoutCluster {
         long warmupMs = Integer.getInteger("bench.cluster.warmupMs", 4_000);
         long measureMs = Integer.getInteger("bench.cluster.measureMs", 10_000);
         boolean doorbell = Boolean.getBoolean("bench.cluster.doorbell");
+        int shards = Integer.getInteger("bench.cluster.shards", 0);
         String run = UUID.randomUUID().toString().substring(0, 8);
 
         // ---- launch the producer in a separate JVM ----
@@ -106,7 +107,6 @@ public class FanoutCluster {
             qs.add(new ConductorRedisQueue("fanc_" + run + "_" + i, cmds, pollerExec));
         }
 
-        ExecutorService workers = Executors.newFixedThreadPool(totalWorkers, smallStack("worker"));
         AtomicBoolean running = new AtomicBoolean(true);
         AtomicLong consumed = new AtomicLong();
         AtomicLong popCalls = new AtomicLong();
@@ -115,54 +115,66 @@ public class FanoutCluster {
         ConcurrentHashMap<String, Boolean> seen = new ConcurrentHashMap<>();
         List<long[]> latencyBuffers = new CopyOnWriteArrayList<>();
 
-        Runnable[] tasks = new Runnable[totalWorkers];
-        for (int i = 0; i < totalWorkers; i++) {
-            final ConductorRedisQueue q = qs.get(i % queues);
-            final String doorKey = "door_" + run + "_" + (i % queues);
-            tasks[i] =
-                    doorbell
-                            ? () -> {
-                                // Doorbell consumer: block on Redis (BLPOP). The token is delivered
-                                // the instant the producer LPUSHes it — no timing-miss window.
-                                long[] lat = new long[200_000];
-                                int n = 0;
-                                while (running.get()) {
-                                    List<String> res = pooled.blpop(1, doorKey);
-                                    long nowMs = System.currentTimeMillis();
-                                    popCalls.incrementAndGet();
-                                    if (res == null || res.size() < 2) {
-                                        emptyPops.incrementAndGet();
-                                        continue;
-                                    }
-                                    String id = res.get(1);
-                                    int c = id.indexOf(':');
-                                    if (c > 0 && n < lat.length) {
-                                        try {
-                                            lat[n++] = nowMs - Long.parseLong(id.substring(0, c));
-                                        } catch (NumberFormatException ignored) {
-                                        }
-                                    }
-                                    if (seen.putIfAbsent(id, Boolean.TRUE) != null) {
-                                        duplicates.incrementAndGet();
-                                    }
-                                    consumed.incrementAndGet();
+        List<Runnable> taskList = new ArrayList<>();
+        if (doorbell && shards > 0) {
+            // Sharded multi-key BLPOP: `shards` listener threads (= `shards` Redis connections),
+            // each
+            // blocking on the doorbells of a PARTITION of the queues. Connections scale with shard
+            // count, not queue/worker count.
+            for (int s = 0; s < shards; s++) {
+                final int shard = s;
+                String[] keys =
+                        java.util.stream.IntStream.range(0, queues)
+                                .filter(qi -> qi % shards == shard)
+                                .mapToObj(qi -> "door_" + run + "_" + qi)
+                                .toArray(String[]::new);
+                taskList.add(
+                        () -> {
+                            long[] lat = new long[1_000_000];
+                            int n = 0;
+                            while (running.get()) {
+                                List<String> res = pooled.blpop(1, keys);
+                                long nowMs = System.currentTimeMillis();
+                                popCalls.incrementAndGet();
+                                if (res == null || res.size() < 2) {
+                                    emptyPops.incrementAndGet();
+                                    continue;
                                 }
-                                latencyBuffers.add(java.util.Arrays.copyOf(lat, n));
-                            }
-                            : () -> {
-                                long[] lat = new long[200_000];
-                                int n = 0;
-                                while (running.get()) {
-                                    List<QueueMessage> popped =
-                                            q.pop(batch, waitMs, TimeUnit.MILLISECONDS);
-                                    long nowMs = System.currentTimeMillis();
-                                    popCalls.incrementAndGet();
-                                    if (popped.isEmpty()) {
-                                        emptyPops.incrementAndGet();
-                                        continue;
+                                String id = res.get(1);
+                                int c = id.indexOf(':');
+                                if (c > 0 && n < lat.length) {
+                                    try {
+                                        lat[n++] = nowMs - Long.parseLong(id.substring(0, c));
+                                    } catch (NumberFormatException ignored) {
                                     }
-                                    for (QueueMessage m : popped) {
-                                        String id = m.getId();
+                                }
+                                if (seen.putIfAbsent(id, Boolean.TRUE) != null) {
+                                    duplicates.incrementAndGet();
+                                }
+                                consumed.incrementAndGet();
+                            }
+                            latencyBuffers.add(java.util.Arrays.copyOf(lat, n));
+                        });
+            }
+        } else {
+            for (int i = 0; i < totalWorkers; i++) {
+                final ConductorRedisQueue q = qs.get(i % queues);
+                final String doorKey = "door_" + run + "_" + (i % queues);
+                taskList.add(
+                        doorbell
+                                ? () -> {
+                                    // Per-worker BLPOP: one blocked connection per worker.
+                                    long[] lat = new long[200_000];
+                                    int n = 0;
+                                    while (running.get()) {
+                                        List<String> res = pooled.blpop(1, doorKey);
+                                        long nowMs = System.currentTimeMillis();
+                                        popCalls.incrementAndGet();
+                                        if (res == null || res.size() < 2) {
+                                            emptyPops.incrementAndGet();
+                                            continue;
+                                        }
+                                        String id = res.get(1);
                                         int c = id.indexOf(':');
                                         if (c > 0 && n < lat.length) {
                                             try {
@@ -175,12 +187,46 @@ public class FanoutCluster {
                                             duplicates.incrementAndGet();
                                         }
                                         consumed.incrementAndGet();
-                                        q.ack(id);
                                     }
+                                    latencyBuffers.add(java.util.Arrays.copyOf(lat, n));
                                 }
-                                latencyBuffers.add(java.util.Arrays.copyOf(lat, n));
-                            };
+                                : () -> {
+                                    long[] lat = new long[200_000];
+                                    int n = 0;
+                                    while (running.get()) {
+                                        List<QueueMessage> popped =
+                                                q.pop(batch, waitMs, TimeUnit.MILLISECONDS);
+                                        long nowMs = System.currentTimeMillis();
+                                        popCalls.incrementAndGet();
+                                        if (popped.isEmpty()) {
+                                            emptyPops.incrementAndGet();
+                                            continue;
+                                        }
+                                        for (QueueMessage m : popped) {
+                                            String id = m.getId();
+                                            int c = id.indexOf(':');
+                                            if (c > 0 && n < lat.length) {
+                                                try {
+                                                    lat[n++] =
+                                                            nowMs
+                                                                    - Long.parseLong(
+                                                                            id.substring(0, c));
+                                                } catch (NumberFormatException ignored) {
+                                                }
+                                            }
+                                            if (seen.putIfAbsent(id, Boolean.TRUE) != null) {
+                                                duplicates.incrementAndGet();
+                                            }
+                                            consumed.incrementAndGet();
+                                            q.ack(id);
+                                        }
+                                    }
+                                    latencyBuffers.add(java.util.Arrays.copyOf(lat, n));
+                                });
+            }
         }
+        Runnable[] tasks = taskList.toArray(new Runnable[0]);
+        ExecutorService workers = Executors.newFixedThreadPool(tasks.length, smallStack("worker"));
 
         for (Runnable t : tasks) workers.submit(t);
         sleep(warmupMs);
@@ -226,7 +272,17 @@ public class FanoutCluster {
                         waitMs,
                         ratePerQueue,
                         (long) queues * ratePerQueue));
-        r.append(String.format("mode=%s%n", doorbell ? "BLPOP-doorbell" : "timed-poll"));
+        String mode =
+                doorbell
+                        ? (shards > 0
+                                ? "BLPOP-doorbell sharded ("
+                                        + shards
+                                        + " conns for "
+                                        + queues
+                                        + " queues)"
+                                : "BLPOP-doorbell per-worker (" + totalWorkers + " conns)")
+                        : "timed-poll";
+        r.append(String.format("mode=%s%n", mode));
         r.append(String.format("measure=%.1fs%n", elapsedSec));
         r.append(String.format("consumed:    %,d  (%,.0f /sec)%n", cons, cons / elapsedSec));
         r.append(String.format("pop() calls: %,d%n", popCalls.get()));
