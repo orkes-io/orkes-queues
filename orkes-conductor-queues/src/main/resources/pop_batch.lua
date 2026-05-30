@@ -8,11 +8,15 @@ if #msg_array == 0 then
     return nil
 end
 
-local j
-j = 1
-for i = 1, #msg_array/2 do
-    local added = redis.call("ZADD", message_queue, "XX", "CH", new_timeout, msg_array[j])
-    j = j + 2
+-- Rescore every claimed member invisible (now + unack) in a SINGLE multi-member ZADD rather than
+-- one ZADD per message. ZRANGEBYSCORE ... WITHSCORES returns [member, score, member, score, ...],
+-- so members are at the odd indices. batch_size is bounded (<= MAX_POLL_COUNT), keeping the unpack
+-- well within Lua's stack limit.
+local zadd_args = {message_queue, "XX", "CH"}
+for i = 1, #msg_array, 2 do
+    zadd_args[#zadd_args + 1] = new_timeout
+    zadd_args[#zadd_args + 1] = msg_array[i]
 end
+redis.call("ZADD", unpack(zadd_args))
 
 return msg_array
