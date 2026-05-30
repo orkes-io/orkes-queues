@@ -138,6 +138,29 @@ public interface ConductorQueue {
     long size();
 
     /**
+     * Returns the number of messages due for delivery right now (score &le; now) — the ready
+     * backlog, excluding delayed and in-flight (claimed) messages. Unlike {@link #size()} (total
+     * cardinality) this is the true consumer-lag depth. Default {@code -1} for implementations that
+     * do not track it.
+     *
+     * @return ready-message count, or -1 if unsupported
+     */
+    default long readySize() {
+        return -1;
+    }
+
+    /**
+     * Returns the age in milliseconds of the oldest <em>ready</em> message — how long the head of
+     * the queue has waited past its due time (the queue's lag). 0 when empty or the head is not yet
+     * due; default {@code -1} for implementations that do not track it.
+     *
+     * @return oldest-ready age in ms, 0 if none ready, or -1 if unsupported
+     */
+    default long oldestReadyAgeMillis() {
+        return -1;
+    }
+
+    /**
      * Returns the unack timeout for this queue in milliseconds.
      *
      * @return the queue unack time

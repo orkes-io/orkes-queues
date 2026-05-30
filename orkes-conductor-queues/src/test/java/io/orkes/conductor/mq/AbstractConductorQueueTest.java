@@ -579,4 +579,48 @@ public abstract class AbstractConductorQueueTest {
 
         rateLimitedQueue.flush();
     }
+
+    @Test
+    public void testReadySizeAndLag() {
+        ConductorQueue q = createQueue("lag_test_" + UUID.randomUUID());
+        q.flush();
+
+        // Empty queue: nothing ready, no lag.
+        assertEquals(0, q.readySize());
+        assertEquals(0, q.oldestReadyAgeMillis());
+
+        // 6 due-now messages + 4 delayed (5s out). readySize counts only the due ones; size() is
+        // all.
+        List<QueueMessage> messages = new LinkedList<>();
+        for (int i = 0; i < 6; i++) {
+            messages.add(new QueueMessage("due-" + i, ""));
+        }
+        for (int i = 0; i < 4; i++) {
+            QueueMessage delayed = new QueueMessage("delayed-" + i, "");
+            delayed.setTimeout(5000);
+            messages.add(delayed);
+        }
+        q.push(messages);
+
+        assertEquals(10, q.size(), "size() counts all enqueued (ready + delayed)");
+        assertEquals(6, q.readySize(), "readySize() counts only messages due now");
+
+        // The head of the ready set was due ~now, so its lag is small but non-negative. Sleep a
+        // beat
+        // to make it unambiguously positive.
+        Uninterruptibles.sleepUninterruptibly(Duration.ofMillis(50));
+        long lag = q.oldestReadyAgeMillis();
+        assertTrue(lag >= 0, "lag should be non-negative, was " + lag);
+        assertTrue(lag < 5000, "only due messages count toward lag, not the 5s-delayed ones");
+
+        // Drain the ready ones; the delayed ones are still not due, so readySize → 0.
+        List<QueueMessage> popped = q.pop(6, 500, TimeUnit.MILLISECONDS);
+        for (QueueMessage m : popped) {
+            q.ack(m.getId());
+        }
+        assertEquals(0, q.readySize(), "no messages due after draining the ready set");
+        assertEquals(0, q.oldestReadyAgeMillis(), "no ready message → 0 lag");
+
+        q.flush();
+    }
 }

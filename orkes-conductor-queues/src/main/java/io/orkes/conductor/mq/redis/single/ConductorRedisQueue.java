@@ -226,13 +226,13 @@ public class ConductorRedisQueue implements ConductorQueue {
         return queueMonitor.getMessagesFetched();
     }
 
-    /** Messages due right now (ready backlog), excluding delayed and in-flight (observability). */
-    public long getReadySize() {
+    @Override
+    public long readySize() {
         return queueMonitor.getReadySize();
     }
 
-    /** Age (ms) of the oldest ready message — the queue's consumer lag (observability). */
-    public long getOldestReadyAgeMillis() {
+    @Override
+    public long oldestReadyAgeMillis() {
         return queueMonitor.getOldestReadyAgeMillis();
     }
 }

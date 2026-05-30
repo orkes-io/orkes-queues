@@ -175,4 +175,14 @@ public class ConductorRedisClusterQueue implements ConductorQueue {
     public String getShardName() {
         return null;
     }
+
+    @Override
+    public long readySize() {
+        return queueMonitor.getReadySize();
+    }
+
+    @Override
+    public long oldestReadyAgeMillis() {
+        return queueMonitor.getOldestReadyAgeMillis();
+    }
 }
