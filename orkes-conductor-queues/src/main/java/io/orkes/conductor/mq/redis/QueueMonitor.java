@@ -94,9 +94,25 @@ public abstract class QueueMonitor {
     private static final int DEMAND_PER_POLLER =
             Integer.getInteger("orkes.queue.demandPerPoller", 32);
 
+    /**
+     * Upper bound on how many messages the cache holds ahead of consumption, regardless of summed
+     * live demand. Each cached message is claimed (rescored invisible) in Redis, so on a saturated
+     * queue the cache acts as a buffer whose residence time — {@code depth / throughput} — is added
+     * to delivery latency. Demand from many concurrent consumers (e.g. 32 workers × batch 10 = 320)
+     * would otherwise buffer hundreds of messages; capping the depth keeps that buffer just deep
+     * enough to bridge a poll round-trip (so consumers never starve) while keeping hot-queue
+     * latency low. Sparse/canonical queues have demand below this cap, so they are unaffected.
+     */
+    private static final int MAX_CACHE_DEPTH = Integer.getInteger("orkes.queue.maxCacheDepth", 64);
+
     @Getter @Setter private int queueUnackTime = 30_000;
 
     private final int MAX_POLL_COUNT = 1000;
+
+    /** Demand bounded by the cache-depth cap — the basis for both fetch size and poller ramp-up. */
+    private int effectiveDemand() {
+        return Math.min(liveDemand.get(), MAX_CACHE_DEPTH);
+    }
 
     /**
      * Upper bound on consecutive Redis fetches in a single poll cycle before yielding the executor
@@ -367,7 +383,7 @@ public abstract class QueueMonitor {
      * avoids spawning helpers for a brief burst.
      */
     private void maybeSpawnHelper() {
-        int demand = liveDemand.get();
+        int demand = effectiveDemand();
         if (demand - peekedMessages.size() <= 0) {
             return;
         }
@@ -417,10 +433,10 @@ public abstract class QueueMonitor {
             boolean drained = false; // Redis had no more due messages (empty or partial batch)
             boolean cacheFull = false; // cache already covers outstanding demand
             for (int i = 0; i < MAX_LOOP_FETCHES; i++) {
-                int unfilled = liveDemand.get() - peekedMessages.size();
+                int unfilled = effectiveDemand() - peekedMessages.size();
                 if (unfilled <= 0) {
                     cacheFull = true;
-                    break; // cache already covers outstanding demand — do not over-fetch
+                    break; // cache already covers outstanding (capped) demand — do not over-fetch
                 }
                 int batch = Math.min(MAX_POLL_COUNT, unfilled);
                 int fetched = fetchIntoCache(batch);
