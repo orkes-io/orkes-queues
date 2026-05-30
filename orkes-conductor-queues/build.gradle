@@ -11,12 +11,18 @@ dependencies {
     annotationProcessor 'org.projectlombok:lombok:1.18.36'
     testAnnotationProcessor 'org.projectlombok:lombok:1.18.36'
 
-    testImplementation "org.testcontainers:testcontainers:1.17.2"
+    testImplementation "org.testcontainers:testcontainers:${versions.revTestContainer}"
     testImplementation "org.junit.jupiter:junit-jupiter"
+    testRuntimeOnly "ch.qos.logback:logback-classic:1.4.11"
 }
 
 test {
     useJUnitPlatform()
+    // Use Docker API >= 1.40. Docker Desktop 4.x requires minimum 1.40; testcontainers'
+    // shaded docker-java defaults to 1.32. The shaded docker-java reads the version from
+    // the "api.version" Java system property (not from the DOCKER_API_VERSION env var).
+    systemProperty "api.version", "1.41"
+
     // Forward benchmark opt-in properties to the forked test JVM (see QueueBenchmark).
     ['bench', 'bench.redis.host', 'bench.redis.port', 'bench.out', 'bench.threads',
      'bench.latency', 'bench.latency.consumers', 'bench.latency.wait',
