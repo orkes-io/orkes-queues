@@ -35,6 +35,7 @@ without it is a no-op) and `-Dbench.out=<file>` to also write the report to a fi
 | `FanoutCluster` | `-Dbench.cluster=true` | **Cross-JVM** fan-out: producer in a child JVM, consumers here — the only way to measure true cross-process delivery latency (and the `BLPOP` doorbell). |
 | `BenchCompare` | `-Dbench.cmp=true` | Portable, public-API-only fan-out for an apples-to-apples **`main` vs branch** comparison; reads Redis ops from `INFO commandstats`. |
 | `LocalRedisFunctionalTest` | `-Dbench=true` | Not a benchmark — runs the full correctness suite against a local Redis (no containers). Use it to confirm a change is still correct. |
+| `LocalRedisDoorbellFunctionalTest` | `-Dbench=true` | The same correctness suite with every queue wired to a `RedisDoorbell`, so the combined ZADD+ring enqueue script is validated (priority/delay ordering preserved). |
 
 ### `QueueBenchmark` — single queue, scoring + load
 
@@ -118,6 +119,17 @@ These configure the live `QueueMonitor` and can be passed to any harness to expl
 | `orkes.queue.batchGatherMs` | 2 | After the first message, how long `pop` lingers gathering the rest of a batch before returning. |
 | `orkes.queue.batchWindowMs` | 5 | Push-wake coalescing window (bounds push-driven polling on a hot queue). |
 | `orkes.queue.maxPollBackoffMs` | 50 | Idle backoff cap used until a caller's `waitTime` is known. |
+
+## Observability (production getters on `ConductorRedisQueue`)
+
+Not benchmark output — these are live signals for metrics/alerting:
+
+| Getter | Meaning |
+|---|---|
+| `getPollsTotal()` / `getPollsEmpty()` | Redis poll volume and how many found nothing due. |
+| `getMessagesFetched()` | Messages claimed into the cache. |
+| `getReadySize()` | Messages due **right now** (excludes delayed and in-flight) — the real ready backlog. |
+| `getOldestReadyAgeMillis()` | How long the head of the queue has waited past its due time — the queue's **lag**. |
 
 ## Reading the output
 
