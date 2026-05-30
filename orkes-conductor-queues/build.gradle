@@ -30,7 +30,7 @@ test {
      'bench.cluster.batch', 'bench.cluster.wait', 'bench.cluster.ratePerQueue',
      'bench.cluster.publishers', 'bench.cluster.pool', 'bench.cluster.pollerThreads',
      'bench.cluster.warmupMs', 'bench.cluster.measureMs', 'bench.cluster.doorbell',
-     'bench.cluster.shards',
+     'bench.cluster.shards', 'bench.cluster.realDoorbell',
      'orkes.queue.maxPollers', 'orkes.queue.demandPerPoller',
      'orkes.queue.maxPollBackoffMs', 'orkes.queue.batchWindowMs'].each { k ->
         if (System.getProperty(k) != null) {

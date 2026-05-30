@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import com.netflix.conductor.redis.jedis.UnifiedJedisCommands;
 
 import io.orkes.conductor.mq.QueueMessage;
+import io.orkes.conductor.mq.redis.RedisDoorbell;
 import io.orkes.conductor.mq.redis.single.ConductorRedisQueue;
 
 import redis.clients.jedis.Connection;
@@ -68,7 +69,9 @@ public class FanoutCluster {
         long warmupMs = Integer.getInteger("bench.cluster.warmupMs", 4_000);
         long measureMs = Integer.getInteger("bench.cluster.measureMs", 10_000);
         boolean doorbell = Boolean.getBoolean("bench.cluster.doorbell");
+        boolean realDoorbell = Boolean.getBoolean("bench.cluster.realDoorbell");
         int shards = Integer.getInteger("bench.cluster.shards", 0);
+        int doorbellShards = shards > 0 ? shards : 8;
         String run = UUID.randomUUID().toString().substring(0, 8);
 
         // ---- launch the producer in a separate JVM ----
@@ -87,7 +90,8 @@ public class FanoutCluster {
                         String.valueOf(ratePerQueue),
                         run,
                         String.valueOf(publishers),
-                        String.valueOf(doorbell));
+                        String.valueOf(doorbell),
+                        String.valueOf(realDoorbell));
         pb.redirectOutput(new File("/tmp/fanout-cluster-publisher.log"));
         pb.redirectError(new File("/tmp/fanout-cluster-publisher.log"));
         Process producer = pb.start();
@@ -102,9 +106,14 @@ public class FanoutCluster {
         ExecutorService pollerExec =
                 Executors.newFixedThreadPool(pollerThreads, smallStack("poller"));
 
+        // Consumer-side doorbell: sharded BLPOP listeners that wake the local pollers.
+        RedisDoorbell consumerDoorbell =
+                realDoorbell ? new RedisDoorbell(pooled, doorbellShards) : null;
         List<ConductorRedisQueue> qs = new ArrayList<>(queues);
         for (int i = 0; i < queues; i++) {
-            qs.add(new ConductorRedisQueue("fanc_" + run + "_" + i, cmds, pollerExec));
+            qs.add(
+                    new ConductorRedisQueue(
+                            "fanc_" + run + "_" + i, cmds, pollerExec, consumerDoorbell));
         }
 
         AtomicBoolean running = new AtomicBoolean(true);
@@ -273,16 +282,26 @@ public class FanoutCluster {
                         ratePerQueue,
                         (long) queues * ratePerQueue));
         String mode =
-                doorbell
-                        ? (shards > 0
-                                ? "BLPOP-doorbell sharded ("
-                                        + shards
-                                        + " conns for "
-                                        + queues
-                                        + " queues)"
-                                : "BLPOP-doorbell per-worker (" + totalWorkers + " conns)")
-                        : "timed-poll";
+                realDoorbell
+                        ? ("REAL doorbell end-to-end ("
+                                + doorbellShards
+                                + " BLPOP listeners -> poller claim)")
+                        : doorbell
+                                ? (shards > 0
+                                        ? ("BLPOP-doorbell sharded ("
+                                                + shards
+                                                + " conns for "
+                                                + queues
+                                                + " queues)")
+                                        : "BLPOP-doorbell per-worker (" + totalWorkers + " conns)")
+                                : "timed-poll";
         r.append(String.format("mode=%s%n", mode));
+        if (consumerDoorbell != null) {
+            r.append(
+                    String.format(
+                            "doorbell wakes delivered: %,d%n",
+                            consumerDoorbell.wakesDelivered.get()));
+        }
         r.append(String.format("measure=%.1fs%n", elapsedSec));
         r.append(String.format("consumed:    %,d  (%,.0f /sec)%n", cons, cons / elapsedSec));
         r.append(String.format("pop() calls: %,d%n", popCalls.get()));
@@ -318,6 +337,9 @@ public class FanoutCluster {
                 q.flush();
             } catch (Exception ignored) {
             }
+        }
+        if (consumerDoorbell != null) {
+            consumerDoorbell.close();
         }
         pollerExec.shutdownNow();
         pooled.close();

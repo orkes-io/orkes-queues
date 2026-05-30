@@ -24,6 +24,7 @@ import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
 import com.netflix.conductor.redis.jedis.UnifiedJedisCommands;
 
 import io.orkes.conductor.mq.QueueMessage;
+import io.orkes.conductor.mq.redis.RedisDoorbell;
 import io.orkes.conductor.mq.redis.single.ConductorRedisQueue;
 
 import redis.clients.jedis.Connection;
@@ -50,6 +51,7 @@ public final class FanoutClusterPublisher {
         String run = args[4];
         int publishers = args.length > 5 ? Integer.parseInt(args[5]) : 4;
         boolean doorbell = args.length > 6 && Boolean.parseBoolean(args[6]);
+        boolean realDoorbell = args.length > 7 && Boolean.parseBoolean(args[7]);
         long totalRate = (long) queues * ratePerQueue;
 
         GenericObjectPoolConfig<Connection> poolConfig = new GenericObjectPoolConfig<>();
@@ -60,9 +62,11 @@ public final class FanoutClusterPublisher {
         // demand); a tiny pool is fine.
         ExecutorService exec = Executors.newFixedThreadPool(2);
 
+        // Publish-only doorbell (no listeners) so push() rings it.
+        RedisDoorbell door = realDoorbell ? new RedisDoorbell(pooled, 0) : null;
         List<ConductorRedisQueue> qs = new ArrayList<>(queues);
         for (int i = 0; i < queues; i++) {
-            qs.add(new ConductorRedisQueue("fanc_" + run + "_" + i, cmds, exec));
+            qs.add(new ConductorRedisQueue("fanc_" + run + "_" + i, cmds, exec, door));
         }
 
         AtomicInteger rr = new AtomicInteger();

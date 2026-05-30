@@ -23,6 +23,7 @@ import com.netflix.conductor.redis.jedis.JedisCommands;
 import io.orkes.conductor.mq.ConductorQueue;
 import io.orkes.conductor.mq.QueueMessage;
 import io.orkes.conductor.mq.redis.QueueMonitor;
+import io.orkes.conductor.mq.redis.RedisDoorbell;
 
 import lombok.extern.slf4j.Slf4j;
 import redis.clients.jedis.params.ZAddParams;
@@ -39,6 +40,8 @@ public class ConductorRedisQueue implements ConductorQueue {
 
     private final QueueMonitor queueMonitor;
 
+    private final RedisDoorbell doorbell;
+
     /**
      * Creates a new conductor Redis queue.
      *
@@ -48,10 +51,33 @@ public class ConductorRedisQueue implements ConductorQueue {
      */
     public ConductorRedisQueue(
             String queueName, JedisCommands jedisPool, ExecutorService executorService) {
+        this(queueName, jedisPool, executorService, null);
+    }
+
+    /**
+     * Creates a new conductor Redis queue with an optional cross-process {@link RedisDoorbell}.
+     * When supplied, a push of a due message rings the doorbell so pollers on other processes are
+     * woken via blocking {@code BLPOP} in ~a round-trip instead of their idle backoff. Passing
+     * {@code null} keeps the in-process-only behavior (non-breaking).
+     *
+     * @param queueName the name of the queue
+     * @param jedisPool the Jedis commands interface
+     * @param executorService the executor service for async polling
+     * @param doorbell cross-process wake doorbell, or {@code null} for in-process only
+     */
+    public ConductorRedisQueue(
+            String queueName,
+            JedisCommands jedisPool,
+            ExecutorService executorService,
+            RedisDoorbell doorbell) {
         this.jedis = jedisPool;
         this.clock = Clock.systemDefaultZone();
         this.queueName = queueName;
         this.queueMonitor = new RedisQueueMonitor(jedisPool, queueName, executorService);
+        this.doorbell = doorbell;
+        if (doorbell != null) {
+            doorbell.register(queueName, queueMonitor);
+        }
         log.info("ConductorRedisQueue started serving {}", queueName);
     }
 
@@ -107,9 +133,12 @@ public class ConductorRedisQueue implements ConductorQueue {
         }
         jedis.zadd(queueName, scores);
         if (anyDueNow) {
-            // Wake the poller so a waiting consumer gets this message in ~a poll round-trip rather
-            // than waiting out the idle backoff (in-process; cross-process relies on the backoff).
+            // Wake the local poller (same-JVM consumers) immediately, and ring the cross-process
+            // doorbell so pollers on other instances are woken via BLPOP rather than their backoff.
             queueMonitor.notifyMessageReady();
+            if (doorbell != null) {
+                doorbell.publish(queueName);
+            }
         }
     }
 

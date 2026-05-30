@@ -123,6 +123,14 @@ public abstract class QueueMonitor {
      */
     private static final long BATCH_WINDOW_MS = Integer.getInteger("orkes.queue.batchWindowMs", 5);
 
+    /**
+     * Once a {@code pop} holds at least one message, it waits at most this long for each additional
+     * message to fill the requested batch, instead of the full remaining {@code waitTime}. Bounds
+     * the latency a held message accrues while the call gathers a batch.
+     */
+    private static final long BATCH_GATHER_NANOS =
+            Integer.getInteger("orkes.queue.batchGatherMs", 2) * 1_000_000L;
+
     /** {@code nanoTime} of the most recent Redis poll, for push-wake coalescing. */
     private volatile long lastPollNanos;
 
@@ -235,17 +243,24 @@ public abstract class QueueMonitor {
             // Drain whatever is already cached (cheap, non-blocking).
             drainInto(messages, count);
 
-            // Wait-loop: keep topping up until we have a full batch or run out of time. We re-poll
-            // the cache repeatedly so messages arriving mid-wait (the poller keeps filling) are
-            // delivered in this same call, rather than returning after the first one.
+            // Wait-loop. We long-poll up to `waitTime` for the FIRST message, but once we have at
+            // least one we only briefly "gather" the rest of an arriving batch (BATCH_GATHER_NANOS)
+            // — otherwise a pop(count) on a sparse queue would block the whole waitTime waiting to
+            // fill `count`, adding that delay to the latency of the message it already holds. With
+            // event-driven wake this is what keeps delivery latency at ~the poll round-trip while a
+            // stocked queue still returns a full batch (its messages are all immediately
+            // drainable).
             while (messages.size() < count) {
                 long remaining = deadlineNanos - System.nanoTime();
                 if (remaining <= 0) {
                     break;
                 }
-                QueueMessage message = peekedMessages.poll(remaining, TimeUnit.NANOSECONDS);
+                long waitNanos =
+                        messages.isEmpty() ? remaining : Math.min(remaining, BATCH_GATHER_NANOS);
+                QueueMessage message = peekedMessages.poll(waitNanos, TimeUnit.NANOSECONDS);
                 if (message == null) {
-                    break; // timed out
+                    break; // first-message wait expired, or no more arrived within the gather
+                    // window
                 }
                 long now = clock.millis();
                 if (now > message.getExpiry()) {
