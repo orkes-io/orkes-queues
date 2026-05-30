@@ -86,6 +86,9 @@ public class ConductorRedisClusterQueue implements ConductorQueue {
 
     @Override
     public void push(List<QueueMessage> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return;
+        }
         long now = clock.millis();
         Map<String, Double> scores = new HashMap<>();
         boolean anyDueNow = false;
