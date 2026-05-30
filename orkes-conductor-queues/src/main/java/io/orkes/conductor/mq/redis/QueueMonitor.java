@@ -337,6 +337,38 @@ public abstract class QueueMonitor {
     protected abstract long queueSize();
 
     /**
+     * Number of messages whose score is in {@code [0, now]} — the backlog that is due right now.
+     */
+    protected abstract long readySize(double now);
+
+    /** Lowest score currently in the queue, or a negative value if the queue is empty. */
+    protected abstract double lowestScore();
+
+    /**
+     * Number of messages due for delivery right now (score &le; now). Unlike {@link #queueSize()}
+     * (total ZSET cardinality) this excludes delayed messages and messages currently in-flight
+     * (claimed and rescored into the future), so it is the true ready backlog / consumer-lag depth.
+     * One {@code ZCOUNT} (O(log N)); intended for periodic metric scrapes, not the hot path.
+     */
+    public long getReadySize() {
+        return readySize(clock.millis());
+    }
+
+    /**
+     * Age in milliseconds of the oldest <em>ready</em> message — how long the head of the queue has
+     * been waiting past its due time (the queue's "lag"). Returns 0 when the queue is empty or its
+     * head is not yet due (delayed or in-flight). One {@code ZRANGE 0 0 WITHSCORES} (O(log N)).
+     */
+    public long getOldestReadyAgeMillis() {
+        double lowest = lowestScore();
+        long now = clock.millis();
+        if (lowest < 0 || lowest > now) {
+            return 0;
+        }
+        return now - (long) lowest;
+    }
+
+    /**
      * Idle backoff cap: grow up to the caller's poll waitTime (so we never poll an empty queue more
      * often than a consumer is willing to wait), bounded by a hard ceiling and floored at the
      * default when no waitTime is known yet.

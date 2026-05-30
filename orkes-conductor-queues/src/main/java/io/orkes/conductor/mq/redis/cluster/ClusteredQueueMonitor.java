@@ -70,6 +70,18 @@ public class ClusteredQueueMonitor extends QueueMonitor {
     }
 
     @Override
+    protected long readySize(double now) {
+        Long count = jedisCluster.zcount(queueName, 0, now);
+        return count == null ? 0 : count;
+    }
+
+    @Override
+    protected double lowestScore() {
+        List<redis.clients.jedis.resps.Tuple> head = jedisCluster.zrangeWithScores(queueName, 0, 0);
+        return (head == null || head.isEmpty()) ? -1 : head.get(0).getScore();
+    }
+
+    @Override
     protected List<String> pollMessages(double now, double maxTime, int batchSize) {
         try {
 
