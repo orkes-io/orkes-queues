@@ -12,7 +12,6 @@
  */
 package io.orkes.conductor.mq.redis.cluster;
 
-import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.HashMap;
 import java.util.List;
@@ -24,6 +23,7 @@ import com.netflix.conductor.redis.jedis.JedisCommands;
 
 import io.orkes.conductor.mq.ConductorQueue;
 import io.orkes.conductor.mq.QueueMessage;
+import io.orkes.conductor.mq.redis.RedisDoorbell;
 
 import lombok.extern.slf4j.Slf4j;
 import redis.clients.jedis.params.ZAddParams;
@@ -38,9 +38,9 @@ public class ConductorRedisClusterQueue implements ConductorQueue {
 
     private final String queueName;
 
-    private static final BigDecimal HUNDRED = new BigDecimal(100);
-
     private final ClusteredQueueMonitor queueMonitor;
+
+    private final RedisDoorbell doorbell;
 
     /**
      * Creates a new conductor Redis Cluster queue.
@@ -51,10 +51,32 @@ public class ConductorRedisClusterQueue implements ConductorQueue {
      */
     public ConductorRedisClusterQueue(
             String queueName, JedisCommands jedisCommands, ExecutorService executorService) {
+        this(queueName, jedisCommands, executorService, null);
+    }
+
+    /**
+     * Creates a new conductor Redis Cluster queue with an optional cross-process {@link
+     * RedisDoorbell}. The doorbell's ops are all single-key (per-shard list), so it is
+     * cluster-safe; passing {@code null} keeps the in-process-only behavior (non-breaking).
+     *
+     * @param queueName the name of the queue
+     * @param jedisCommands the Jedis commands interface for cluster
+     * @param executorService the executor service for async polling
+     * @param doorbell cross-process wake doorbell, or {@code null} for in-process only
+     */
+    public ConductorRedisClusterQueue(
+            String queueName,
+            JedisCommands jedisCommands,
+            ExecutorService executorService,
+            RedisDoorbell doorbell) {
         this.jedis = jedisCommands;
         this.clock = Clock.systemDefaultZone();
         this.queueName = queueName;
         this.queueMonitor = new ClusteredQueueMonitor(jedisCommands, queueName, executorService);
+        this.doorbell = doorbell;
+        if (doorbell != null) {
+            doorbell.register(queueName, queueMonitor);
+        }
 
         log.info("ConductorRedisClusterQueue started serving {}", queueName);
     }
@@ -77,15 +99,39 @@ public class ConductorRedisClusterQueue implements ConductorQueue {
     }
 
     @Override
+    public int ackAll(List<String> messageIds) {
+        if (messageIds == null || messageIds.isEmpty()) {
+            return 0;
+        }
+        // All members live under the single queue key (one slot), so a multi-member ZREM is a
+        // single round-trip even on a cluster.
+        Long removed = jedis.zrem(queueName, messageIds.toArray(new String[0]));
+        return removed == null ? 0 : removed.intValue();
+    }
+
+    @Override
     public void push(List<QueueMessage> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return;
+        }
         long now = clock.millis();
         Map<String, Double> scores = new HashMap<>();
+        boolean anyDueNow = false;
         for (QueueMessage msg : messages) {
             double score = getScore(now, msg);
             String messageId = msg.getId();
             scores.put(messageId, score);
+            if (msg.getTimeout() <= 0) {
+                anyDueNow = true;
+            }
         }
         jedis.zadd(queueName, scores);
+        if (anyDueNow) {
+            queueMonitor.notifyMessageReady();
+            if (doorbell != null) {
+                doorbell.ring(queueName);
+            }
+        }
     }
 
     @Override
@@ -132,7 +178,7 @@ public class ConductorRedisClusterQueue implements ConductorQueue {
         if (score == null) {
             return null;
         }
-        int priority = new BigDecimal(score).remainder(BigDecimal.ONE).multiply(HUNDRED).intValue();
+        int priority = (int) ((score - Math.floor(score)) * 100);
         return new QueueMessage(messageId, "", score.longValue(), priority);
     }
 
@@ -159,5 +205,15 @@ public class ConductorRedisClusterQueue implements ConductorQueue {
     @Override
     public String getShardName() {
         return null;
+    }
+
+    @Override
+    public long readySize() {
+        return queueMonitor.getReadySize();
+    }
+
+    @Override
+    public long oldestReadyAgeMillis() {
+        return queueMonitor.getOldestReadyAgeMillis();
     }
 }

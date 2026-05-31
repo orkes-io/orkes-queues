@@ -424,6 +424,42 @@ public abstract class AbstractConductorQueueTest {
     }
 
     @Test
+    public void testAckAll() {
+        getQueue().flush();
+
+        int count = 10;
+        List<QueueMessage> messages = new LinkedList<>();
+        List<String> ids = new ArrayList<>();
+        for (int i = 0; i < count; i++) {
+            String id = "ackall-" + UUID.randomUUID();
+            messages.add(new QueueMessage(id, "payload-" + i));
+            ids.add(id);
+        }
+        getQueue().push(messages);
+        assertEquals(count, getQueue().size());
+
+        // Batch ack removes every message and reports how many were actually removed.
+        int removed = getQueue().ackAll(ids);
+        assertEquals(count, removed);
+        assertEquals(0, getQueue().size());
+
+        // Acking the same ids again removes nothing.
+        assertEquals(0, getQueue().ackAll(ids));
+
+        // Empty input is a no-op.
+        assertEquals(0, getQueue().ackAll(Collections.emptyList()));
+
+        // Partial overlap: only the ids still present are counted.
+        getQueue().flush();
+        QueueMessage present = new QueueMessage("present-" + UUID.randomUUID(), "p");
+        getQueue().push(Arrays.asList(present));
+        int removed2 =
+                getQueue().ackAll(Arrays.asList(present.getId(), "missing-" + UUID.randomUUID()));
+        assertEquals(1, removed2);
+        assertEquals(0, getQueue().size());
+    }
+
+    @Test
     public void testRemove() {
         getQueue().flush();
 
@@ -542,5 +578,151 @@ public abstract class AbstractConductorQueueTest {
         assertEquals(0, popped.size());
 
         rateLimitedQueue.flush();
+    }
+
+    @Test
+    public void testReadySizeAndLag() {
+        ConductorQueue q = createQueue("lag_test_" + UUID.randomUUID());
+        q.flush();
+
+        // Empty queue: nothing ready, no lag.
+        assertEquals(0, q.readySize());
+        assertEquals(0, q.oldestReadyAgeMillis());
+
+        // 6 due-now + 4 delayed. The lag/ready metrics read the ZSET score, which is a delivery
+        // timestamp for these messages: timeout=0,priority=0 scores to ~now (due now), and a large
+        // timeout scores far in the future (not due). readySize() counts only those with
+        // score <= now; size() counts all. (Note: a timeout=0 message with priority>0 is scored by
+        // its raw priority value, not a timestamp — so we use priority 0 here to keep the score a
+        // timestamp and the lag meaningful.) The delay is intentionally huge (10 min) so the
+        // delayed
+        // messages cannot become due mid-test on a slow/loaded runner, which would otherwise make
+        // the readySize/lag assertions flaky.
+        final long farFutureMs = 600_000; // 10 minutes
+        List<QueueMessage> messages = new LinkedList<>();
+        for (int i = 0; i < 6; i++) {
+            messages.add(
+                    new QueueMessage("due-" + i, "", 0, 0)); // timeout=0, priority=0 → score≈now
+        }
+        for (int i = 0; i < 4; i++) {
+            messages.add(new QueueMessage("delayed-" + i, "", farFutureMs, 0)); // score≈now+10min
+        }
+        q.push(messages);
+
+        assertEquals(10, q.size(), "size() counts all enqueued (ready + delayed)");
+        assertEquals(6, q.readySize(), "readySize() counts only messages due now");
+
+        // The head of the ready set was due ~now, so its lag is small but non-negative. Sleep a
+        // beat
+        // so it is unambiguously positive, and assert it reflects the ready head, not the
+        // far-future-delayed messages.
+        Uninterruptibles.sleepUninterruptibly(Duration.ofMillis(50));
+        long lag = q.oldestReadyAgeMillis();
+        assertTrue(lag >= 0, "lag should be non-negative, was " + lag);
+        assertTrue(
+                lag < farFutureMs,
+                "lag reflects the due head, not the delayed messages; was " + lag);
+
+        // Drain the ready ones; the delayed ones are still far from due, so readySize → 0.
+        List<QueueMessage> popped = q.pop(6, 500, TimeUnit.MILLISECONDS);
+        for (QueueMessage m : popped) {
+            q.ack(m.getId());
+        }
+        assertEquals(0, q.readySize(), "no messages due after draining the ready set");
+        assertEquals(0, q.oldestReadyAgeMillis(), "no ready message → 0 lag");
+
+        q.flush();
+    }
+
+    /**
+     * Large-batch correctness guard: a single big push followed by a full drain, asserting every
+     * message is delivered exactly once with no losses. Exercises the enqueue {@code ZADD} batching
+     * and the claim ({@code pop_batch.lua}) chunking at a size (5000) past the Lua {@code unpack}
+     * stack limit. Runs on every topology and both the plain and doorbell variants.
+     */
+    @Test
+    public void testLargeBatchPushAndDrain() {
+        // 5000 > the ~3500-member unpack overflow threshold, so a single push that goes through the
+        // combined ZADD+ring Lua (doorbell variants) exercises its chunked enqueue.
+        final int count = 5000;
+        ConductorQueue q = createQueue("largebatch_" + UUID.randomUUID());
+        q.flush();
+
+        List<QueueMessage> messages = new ArrayList<>(count);
+        Set<String> ids = new HashSet<>(count * 2);
+        for (int i = 0; i < count; i++) {
+            String id = "lb-" + i + "-" + UUID.randomUUID();
+            ids.add(id);
+            messages.add(new QueueMessage(id, "", 0, 0)); // due now, timestamp score
+        }
+        q.push(messages);
+        assertEquals(count, q.size(), "all " + count + " messages should be stored by one push");
+        assertEquals(count, q.readySize(), "all should be due now");
+
+        // Drain everything. The cache is depth-capped, so each pop returns a slice and many pops
+        // are
+        // needed; batch-ack each slice (one multi-member ZREM) to keep the round-trip count low.
+        // Termination is progress-based (not wall-clock): we stop when all are seen, or when a pop
+        // returns empty AND Redis confirms the queue is drained — so it cannot hang or flake under
+        // a
+        // slow/loaded runner. The iteration cap is a generous backstop well above the ~count pops
+        // that could ever be needed.
+        Set<String> seen = new HashSet<>(count * 2);
+        int maxIterations = count + 100;
+        int iterations = 0;
+        while (seen.size() < count && iterations++ < maxIterations) {
+            List<QueueMessage> popped = q.pop(count, 200, TimeUnit.MILLISECONDS);
+            if (popped.isEmpty()) {
+                if (q.size() == 0) {
+                    break; // nothing left to deliver
+                }
+                continue; // messages still pending (claimed/unack window) — keep going
+            }
+            List<String> ackIds = new ArrayList<>(popped.size());
+            for (QueueMessage m : popped) {
+                assertTrue(seen.add(m.getId()), "duplicate delivery of " + m.getId());
+                ackIds.add(m.getId());
+            }
+            q.ackAll(ackIds);
+        }
+
+        assertEquals(count, seen.size(), "every message should be delivered exactly once");
+        assertEquals(ids, seen, "delivered ids should match exactly what was pushed");
+        assertEquals(0, q.size(), "queue should be empty after acking all");
+
+        q.flush();
+    }
+
+    /**
+     * Same overflow guard but on the non-cached ({@code popStrict}) path used by rate-limited
+     * queues, where {@code pop(count)} passes the caller's count straight to the claim script with
+     * no MAX_POLL_COUNT cap — the exact path that triggered the unpack overflow. A single {@code
+     * pop(5000)} must claim the whole batch in one call without error.
+     */
+    @Test
+    public void testLargeBatchRateLimitedSingleClaim() {
+        final int count = 5000;
+        ConductorQueue q = createQueue("RATE_LIMITED_WORKFLOW_largebatch_" + UUID.randomUUID());
+        q.flush();
+
+        List<QueueMessage> messages = new ArrayList<>(count);
+        for (int i = 0; i < count; i++) {
+            messages.add(new QueueMessage("rl-" + i + "-" + UUID.randomUUID(), "", 0, 0));
+        }
+        q.push(messages);
+        assertEquals(count, q.size());
+
+        // Uncapped single claim of the whole batch — would throw "too many results to unpack"
+        // before the chunking fix.
+        List<QueueMessage> popped = q.pop(count, 1, TimeUnit.SECONDS);
+        assertEquals(count, popped.size(), "a single pop(count) should claim the entire batch");
+        Set<String> ids = new HashSet<>();
+        for (QueueMessage m : popped) {
+            assertTrue(ids.add(m.getId()), "duplicate in single claim: " + m.getId());
+            q.ack(m.getId());
+        }
+        assertEquals(0, q.size(), "all claimed messages should ack cleanly");
+
+        q.flush();
     }
 }

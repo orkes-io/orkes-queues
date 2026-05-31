@@ -12,7 +12,6 @@
  */
 package io.orkes.conductor.mq.redis.single;
 
-import java.math.BigDecimal;
 import java.time.Clock;
 import java.util.HashMap;
 import java.util.List;
@@ -24,6 +23,7 @@ import com.netflix.conductor.redis.jedis.JedisCommands;
 import io.orkes.conductor.mq.ConductorQueue;
 import io.orkes.conductor.mq.QueueMessage;
 import io.orkes.conductor.mq.redis.QueueMonitor;
+import io.orkes.conductor.mq.redis.RedisDoorbell;
 
 import lombok.extern.slf4j.Slf4j;
 import redis.clients.jedis.params.ZAddParams;
@@ -40,6 +40,8 @@ public class ConductorRedisQueue implements ConductorQueue {
 
     private final QueueMonitor queueMonitor;
 
+    private final RedisDoorbell doorbell;
+
     /**
      * Creates a new conductor Redis queue.
      *
@@ -49,10 +51,33 @@ public class ConductorRedisQueue implements ConductorQueue {
      */
     public ConductorRedisQueue(
             String queueName, JedisCommands jedisPool, ExecutorService executorService) {
+        this(queueName, jedisPool, executorService, null);
+    }
+
+    /**
+     * Creates a new conductor Redis queue with an optional cross-process {@link RedisDoorbell}.
+     * When supplied, a push of a due message rings the doorbell so pollers on other processes are
+     * woken via blocking {@code BLPOP} in ~a round-trip instead of their idle backoff. Passing
+     * {@code null} keeps the in-process-only behavior (non-breaking).
+     *
+     * @param queueName the name of the queue
+     * @param jedisPool the Jedis commands interface
+     * @param executorService the executor service for async polling
+     * @param doorbell cross-process wake doorbell, or {@code null} for in-process only
+     */
+    public ConductorRedisQueue(
+            String queueName,
+            JedisCommands jedisPool,
+            ExecutorService executorService,
+            RedisDoorbell doorbell) {
         this.jedis = jedisPool;
         this.clock = Clock.systemDefaultZone();
         this.queueName = queueName;
         this.queueMonitor = new RedisQueueMonitor(jedisPool, queueName, executorService);
+        this.doorbell = doorbell;
+        if (doorbell != null) {
+            doorbell.register(queueName, queueMonitor);
+        }
         log.info("ConductorRedisQueue started serving {}", queueName);
     }
 
@@ -74,6 +99,16 @@ public class ConductorRedisQueue implements ConductorQueue {
     }
 
     @Override
+    public int ackAll(List<String> messageIds) {
+        if (messageIds == null || messageIds.isEmpty()) {
+            return 0;
+        }
+        // Single multi-member ZREM instead of one round-trip per message.
+        Long removed = jedis.zrem(queueName, messageIds.toArray(new String[0]));
+        return removed == null ? 0 : removed.intValue();
+    }
+
+    @Override
     public void remove(String messageId) {
 
         jedis.zrem(queueName, messageId);
@@ -83,16 +118,32 @@ public class ConductorRedisQueue implements ConductorQueue {
 
     @Override
     public void push(List<QueueMessage> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return;
+        }
 
         long now = clock.millis();
         Map<String, Double> scores = new HashMap<>();
+        boolean anyDueNow = false;
         for (QueueMessage msg : messages) {
             double score = getScore(now, msg);
             String messageId = msg.getId();
             // jedis.zadd(queueName, score, messageId);
             scores.put(messageId, score);
+            if (msg.getTimeout() <= 0) {
+                anyDueNow = true;
+            }
         }
         jedis.zadd(queueName, scores);
+        if (anyDueNow) {
+            // Wake the local poller (same-JVM consumers) immediately, and ring the cross-process
+            // doorbell so pollers on other instances are woken via BLPOP rather than waiting out
+            // their backoff. The ring is a separate single-key op (cluster-safe).
+            queueMonitor.notifyMessageReady();
+            if (doorbell != null) {
+                doorbell.ring(queueName);
+            }
+        }
     }
 
     @Override
@@ -133,7 +184,7 @@ public class ConductorRedisQueue implements ConductorQueue {
         if (score == null) {
             return null;
         }
-        int priority = new BigDecimal(score).remainder(BigDecimal.ONE).multiply(HUNDRED).intValue();
+        int priority = (int) ((score - Math.floor(score)) * 100);
         return new QueueMessage(messageId, "", score.longValue(), priority);
     }
 
@@ -160,5 +211,30 @@ public class ConductorRedisQueue implements ConductorQueue {
     @Override
     public String getShardName() {
         return null;
+    }
+
+    /** Total Redis polls issued by this queue's poller (observability). */
+    public long getPollsTotal() {
+        return queueMonitor.getPollsTotal();
+    }
+
+    /** Polls that found nothing due (observability). */
+    public long getPollsEmpty() {
+        return queueMonitor.getPollsEmpty();
+    }
+
+    /** Total messages fetched from Redis into the cache (observability). */
+    public long getMessagesFetched() {
+        return queueMonitor.getMessagesFetched();
+    }
+
+    @Override
+    public long readySize() {
+        return queueMonitor.getReadySize();
+    }
+
+    @Override
+    public long oldestReadyAgeMillis() {
+        return queueMonitor.getOldestReadyAgeMillis();
     }
 }
