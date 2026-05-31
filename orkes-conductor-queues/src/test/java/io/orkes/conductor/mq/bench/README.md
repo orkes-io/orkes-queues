@@ -135,6 +135,32 @@ Not benchmark output — these are live signals for metrics/alerting:
 | `getReadySize()` | Messages due **right now** (excludes delayed and in-flight) — the real ready backlog. |
 | `getOldestReadyAgeMillis()` | How long the head of the queue has waited past its due time — the queue's **lag**. |
 
+## Enabling the `RedisDoorbell` in production
+
+The doorbell is **opt-in** and **non-breaking**: the default 3-arg `ConductorRedisQueue` constructor
+behaves exactly as before. Enabling it means constructing a shared `RedisDoorbell` and passing it to
+the 4-arg constructor. Before turning it on, account for:
+
+- **Connection budget (the main gotcha).** Each of the `shards` listener threads holds a blocking
+  `BLPOP` that **occupies one connection from the Jedis pool for its full 1s cycle**. Verified: `S`
+  blocked listeners on a pool of `S` will starve all other operations. Size the pool's `maxTotal`
+  with headroom of at least `shards` beyond your normal traffic. `shards` scales with the *process*,
+  not with queue or worker count — a single-digit value (e.g. 4–8) serves hundreds of queues.
+- **Standalone / Sentinel only.** The combined enqueue script and the doorbell list span two keys
+  (`queue` + `conductor.queue.door.<queue>`) in different cluster slots, so the doorbell is for
+  standalone and Sentinel Redis. Redis Cluster keeps the (unchanged) timed-poll path. This is
+  covered by `ConductorRedisQueueDoorbellTest` and `ConductorRedisSentinelDoorbellQueueTest`.
+- **Backwards compatible with an existing backlog.** A doorbell-enabled consumer correctly drains
+  messages that were written *without* a doorbell (plain `ZADD`), and a mixed fleet (some servers on
+  the doorbell, some not) is safe — the doorbell only ever makes a poll happen *sooner*; the sorted
+  set + timed-poll backoff remain the source of truth, so a missed/never-rung token just falls back
+  to the next scheduled poll. Proven by `DoorbellBackwardsCompatTest`.
+- **Lifecycle.** `RedisDoorbell.register` is called from the queue constructor; `unregister` exists
+  but is not auto-invoked, so if the host creates and discards many *distinct* queue names over the
+  process lifetime, call `unregister(queueName)` (or reuse queue instances) to avoid the registry
+  retaining monitor references. For the typical fixed set of long-lived named queues this is a
+  non-issue. Call `RedisDoorbell.close()` on shutdown to stop the listener threads.
+
 ## Reading the output
 
 Each harness prints a block to stdout (and to `-Dbench.out=<file>` if set). Common fields:
