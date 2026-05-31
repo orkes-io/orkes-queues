@@ -44,6 +44,20 @@ public interface ConductorQueue {
     List<QueueMessage> pop(int count, int waitTime, TimeUnit timeUnit);
 
     /**
+     * Returns the first {@code count} message ids ordered by score, regardless of whether their
+     * visibility (deliver) time has elapsed. Intended for inspecting or releasing postponed
+     * messages without popping them — e.g. when a concurrency-limit slot frees and a postponed
+     * task should be made immediately available.
+     *
+     * @param count the maximum number of message ids to return
+     * @return message ids in queue order (earliest score first); empty if the queue has no
+     *     pending messages
+     */
+    default List<String> peekFirstIds(int count) {
+        return List.of();
+    }
+
+    /**
      * Acknowledges a message, removing it from the queue.
      *
      * @param messageId the message id to acknowledge
