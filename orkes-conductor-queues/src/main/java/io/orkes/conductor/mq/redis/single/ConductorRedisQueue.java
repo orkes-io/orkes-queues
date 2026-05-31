@@ -134,16 +134,15 @@ public class ConductorRedisQueue implements ConductorQueue {
                 anyDueNow = true;
             }
         }
-        if (doorbell != null) {
-            // Enqueue and ring the cross-process doorbell in one atomic round-trip (ZADD + LPUSH +
-            // LTRIM) rather than three separate calls.
-            doorbell.pushDueAndRing(jedis, queueName, scores, anyDueNow);
-        } else {
-            jedis.zadd(queueName, scores);
-        }
+        jedis.zadd(queueName, scores);
         if (anyDueNow) {
-            // Wake the local poller (same-JVM consumers) immediately.
+            // Wake the local poller (same-JVM consumers) immediately, and ring the cross-process
+            // doorbell so pollers on other instances are woken via BLPOP rather than waiting out
+            // their backoff. The ring is a separate single-key op (cluster-safe).
             queueMonitor.notifyMessageReady();
+            if (doorbell != null) {
+                doorbell.ring(queueName);
+            }
         }
     }
 

@@ -635,13 +635,10 @@ public abstract class AbstractConductorQueueTest {
     }
 
     /**
-     * Regression guard for the Lua {@code unpack} stack-overflow bug on the <b>enqueue</b> path: a
-     * large push builds one big ZADD, and an un-chunked {@code unpack} overflows Lua's stack
-     * (LUAI_MAXCSTACK) past a few thousand members. On the doorbell-enabled variants the push runs
-     * through {@code push_doorbell.lua}, so pushing well past that threshold in a single call
-     * guards its chunking. Then drains everything to prove the large batch is fully retrievable
-     * with no duplicates or losses. Runs on every topology and both the plain and doorbell
-     * variants.
+     * Large-batch correctness guard: a single big push followed by a full drain, asserting every
+     * message is delivered exactly once with no losses. Exercises the enqueue {@code ZADD} batching
+     * and the claim ({@code pop_batch.lua}) chunking at a size (5000) past the Lua {@code unpack}
+     * stack limit. Runs on every topology and both the plain and doorbell variants.
      */
     @Test
     public void testLargeBatchPushAndDrain() {

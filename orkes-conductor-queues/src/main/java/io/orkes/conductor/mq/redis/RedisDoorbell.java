@@ -12,76 +12,95 @@
  */
 package io.orkes.conductor.mq.redis;
 
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-import com.netflix.conductor.redis.jedis.JedisCommands;
-
 import lombok.extern.slf4j.Slf4j;
 import redis.clients.jedis.UnifiedJedis;
-import redis.clients.jedis.exceptions.JedisNoScriptException;
 
 /**
- * Cross-process, event-driven queue wakeup using a Redis list "doorbell".
+ * Cross-process, event-driven queue wakeup using Redis lists as "doorbells".
  *
- * <p>On push of a due message the producer rings the doorbell ({@code LPUSH door:<queue>}); a small
- * pool of {@code shards} listener threads each block on a <em>partition</em> of the registered
- * doorbells with a single multi-key {@code BLPOP}, and wake the local poller ({@link
- * QueueMonitor#notifyMessageReady()}) the instant a token arrives. Because the wait lives on Redis
- * (not a client-side timer), there is no poll-timing-miss: cross-instance delivery latency is a
- * round-trip rather than up to {@code waitTime}.
+ * <p>On push of a due message the producer rings the doorbell — {@code LPUSH}ing the queue name as
+ * a token onto a per-partition list — and a small pool of {@code shards} listener threads each
+ * block on a partition's list with a single-key {@code BLPOP}. The instant a token arrives the
+ * listener wakes the local poller ({@link QueueMonitor#notifyMessageReady()}). Because the wait
+ * lives on Redis (not a client-side timer), there is no poll-timing-miss: cross-instance delivery
+ * latency is a round-trip rather than up to {@code waitTime}.
+ *
+ * <p><b>Cluster-safe by construction.</b> Every Redis operation here is single-key: the ring is one
+ * {@code LPUSH}/{@code LTRIM} on a partition list, and each listener {@code BLPOP}s a single
+ * partition list at a time. Nothing spans two keys, so there is no {@code CROSSSLOT} hazard — the
+ * doorbell works identically on standalone, Sentinel, and Cluster Redis. (The queue's own {@code
+ * ZADD} on push is a separate, single-key op on the queue's slot.)
  *
  * <p>Properties versus a pub/sub notifier: this is <b>durable</b> (a token waits in the list if no
  * consumer is ready) and <b>load-balanced</b> (exactly one listener pops each token), and the
- * connection cost scales with <b>shard count, not queue count</b> (validated: a handful of
- * connections serve hundreds of queues at ~0&nbsp;ms). It is purely an optimization: the sorted set
- * remains the source of truth and the poller's timed backoff is the fallback, so a missed/dropped
- * token only delays delivery to the next scheduled poll — a message is never lost.
- *
- * <p>The doorbell is bounded to a single pending token per queue ({@code LPUSH} + {@code LTRIM 0
- * 0}), so it is a "there is work" flag, not a per-message queue; one wake triggers one claim of the
- * whole due batch.
+ * connection cost scales with <b>shard count, not queue count</b> (a handful of connections serve
+ * hundreds of queues). It is purely an optimization: the sorted set remains the source of truth and
+ * the poller's timed backoff is the fallback, so a missed/dropped token only delays delivery to the
+ * next scheduled poll — a message is never lost.
  */
 @Slf4j
 public class RedisDoorbell {
 
+    /**
+     * Per-partition doorbell list key prefix. The partition index is hash-tagged so the key is one
+     * slot.
+     */
     private static final String PREFIX = "conductor.queue.door.";
+
     private static final int BLPOP_TIMEOUT_SEC = 1;
+
+    /**
+     * Number of doorbell partitions (= distinct shard lists in Redis). This is a <b>global
+     * constant</b> that every process must agree on, because the producer rings the list a queue
+     * hashes to and the consumer must {@code BLPOP} that same list. It is deliberately independent
+     * of any single process's listener-thread count ({@code shards}): a producer-only process
+     * (shards=0) and a consumer running 8 listener threads still map a given queue to the same
+     * partition.
+     *
+     * <p>For the lowest latency a consumer should run one listener thread per partition (the
+     * default: {@code shards == PARTITIONS}), so each thread stays continuously blocked on a single
+     * partition and wakes the instant a token lands. Running fewer listeners than partitions still
+     * works but each thread then round-robins its partitions one {@code BLPOP} at a time, so a
+     * token can wait up to (partitions-per-thread × {@code BLPOP} timeout) before being noticed —
+     * the timed-poll fallback bounds the worst case regardless.
+     */
+    private static final int PARTITIONS = Integer.getInteger("orkes.queue.doorbellPartitions", 8);
+
+    /**
+     * Upper bound on a partition list's length, enforced with {@code LTRIM} after each ring. A
+     * token is only a "there is work on queue X" hint; under normal load the list drains
+     * immediately and never approaches this. The cap only matters if listeners fall behind (e.g.
+     * all paused), where it bounds memory at the cost of possibly dropping a stale hint — harmless,
+     * since the poller's timed backoff still delivers those messages.
+     */
+    private static final int PARTITION_LIST_CAP =
+            Integer.getInteger("orkes.queue.doorbellListCap", 100_000);
 
     private final UnifiedJedis jedis;
     private final int shards;
     private final ConcurrentHashMap<String, QueueMonitor> registry = new ConcurrentHashMap<>();
-    private final List<Set<String>> shardKeys;
     private final ExecutorService listeners;
     private volatile boolean running = true;
-
-    /** SHA of the combined enqueue+ring script, loaded lazily on first {@link #pushDueAndRing}. */
-    private volatile String pushSha;
 
     /** Diagnostic: number of wake tokens received and dispatched. */
     public final java.util.concurrent.atomic.AtomicLong wakesDelivered =
             new java.util.concurrent.atomic.AtomicLong();
 
     /**
-     * @param jedis connection source supporting blocking ops
-     * @param shards number of listener threads/connections (each watches a partition of queues); 0
-     *     for a publish-only doorbell (e.g. on a producer-only process)
+     * @param jedis connection source supporting blocking ops (standalone, Sentinel, or Cluster)
+     * @param shards number of listener threads/connections; 0 for a publish-only doorbell (e.g. on
+     *     a producer-only process). Capped at {@link #PARTITIONS} (more threads than partitions
+     *     would leave the extras with nothing to watch); each thread holds one blocking connection.
      */
     public RedisDoorbell(UnifiedJedis jedis, int shards) {
         this.jedis = jedis;
-        this.shards = Math.max(0, shards);
-        this.shardKeys = new ArrayList<>();
-        for (int i = 0; i < this.shards; i++) {
-            shardKeys.add(ConcurrentHashMap.newKeySet());
-        }
+        // More listeners than partitions is wasteful (extras get no partitions), so cap there.
+        this.shards = Math.min(Math.max(0, shards), PARTITIONS);
         if (this.shards > 0) {
             this.listeners =
                     Executors.newFixedThreadPool(
@@ -100,110 +119,82 @@ public class RedisDoorbell {
         }
     }
 
-    private int shardOf(String queueName) {
-        return Math.floorMod(queueName.hashCode(), shards);
+    /** Global, process-independent mapping from a queue to its doorbell partition. */
+    private static int partitionOf(String queueName) {
+        return Math.floorMod(queueName.hashCode(), PARTITIONS);
     }
 
-    private static String doorKey(String queueName) {
-        return PREFIX + queueName;
+    /**
+     * Doorbell list key for a partition. The partition index is hash-tagged so the list lives in a
+     * single slot — every op on it (LPUSH/LTRIM/BLPOP) is single-key and therefore cluster-safe.
+     */
+    private static String partitionKey(int partition) {
+        return PREFIX + "{" + partition + "}";
     }
 
     /** Registers a local poller to be woken when {@code queueName}'s doorbell rings. */
     public void register(String queueName, QueueMonitor monitor) {
         registry.put(queueName, monitor);
-        if (shards > 0) {
-            shardKeys.get(shardOf(queueName)).add(doorKey(queueName));
-        }
     }
 
     /** Removes a previously registered poller. */
     public void unregister(String queueName) {
         registry.remove(queueName);
-        if (shards > 0) {
-            shardKeys.get(shardOf(queueName)).remove(doorKey(queueName));
-        }
     }
 
-    /** Producer side: ring the doorbell for a queue (bounded to one pending token). Best-effort. */
-    public void publish(String queueName) {
+    /**
+     * Producer side: ring the doorbell for a queue. Pushes the queue name as a wake token onto its
+     * partition list and trims the list to its cap. Single-key ops (cluster-safe). Best-effort: a
+     * failed ring just means consumers fall back to their timed poll.
+     */
+    public void ring(String queueName) {
+        String key = partitionKey(partitionOf(queueName));
         try {
-            String k = doorKey(queueName);
-            jedis.lpush(k, "1");
-            jedis.ltrim(k, 0, 0);
+            jedis.lpush(key, queueName);
+            jedis.ltrim(key, 0, PARTITION_LIST_CAP - 1);
         } catch (Exception e) {
-            log.debug("doorbell publish failed for {}: {}", queueName, e.getMessage());
+            log.debug("doorbell ring failed for {}: {}", queueName, e.getMessage());
         }
     }
 
     /**
-     * Producer side: enqueue {@code scores} (member &rarr; score) and, when {@code ring}, ring the
-     * doorbell — in a single atomic round-trip (ZADD + LPUSH + LTRIM in one script) instead of
-     * three. Runs on the caller's connection so the enqueue uses the queue's own pool. Standalone
-     * Redis only (the script spans the queue and doorbell keys, which are in different cluster
-     * slots).
+     * Listener thread {@code listenerId}: watches the partitions assigned to it ({@code listenerId,
+     * listenerId+shards, ...} up to {@link #PARTITIONS}), one single-key {@code BLPOP} at a time in
+     * round-robin. With {@code shards >= PARTITIONS} each listener owns exactly one partition; with
+     * fewer listeners each owns several. Single-key BLPOP keeps it cluster-safe.
      */
-    public void pushDueAndRing(
-            JedisCommands conn, String queueName, Map<String, Double> scores, boolean ring) {
-        List<String> keys = Arrays.asList(queueName, doorKey(queueName));
-        List<String> argv = new ArrayList<>(scores.size() * 2 + 1);
-        argv.add(ring ? "1" : "0");
-        for (Map.Entry<String, Double> e : scores.entrySet()) {
-            argv.add(String.valueOf(e.getValue())); // score
-            argv.add(e.getKey()); // member
-        }
-        try {
-            if (pushSha == null) {
-                pushSha = loadPushScript(conn);
-            }
-            conn.evalsha(pushSha, keys, argv);
-        } catch (JedisNoScriptException noScript) {
-            // Redis was restarted / flushed its script cache — reload and retry once.
-            pushSha = loadPushScript(conn);
-            conn.evalsha(pushSha, keys, argv);
-        }
-    }
-
-    private String loadPushScript(JedisCommands conn) {
-        try (InputStream stream = getClass().getResourceAsStream("/push_doorbell.lua")) {
-            byte[] script = stream.readAllBytes();
-            byte[] sha = conn.scriptLoad(script, "".getBytes(StandardCharsets.UTF_8));
-            return new String(sha, StandardCharsets.UTF_8);
-        } catch (Exception e) {
-            throw new RuntimeException("failed to load push_doorbell.lua", e);
-        }
-    }
-
-    private void listen(int shard) {
-        Set<String> keySet = shardKeys.get(shard);
+    private void listen(int listenerId) {
+        int[] myPartitions =
+                java.util.stream.IntStream.range(0, PARTITIONS)
+                        .filter(p -> p % shards == listenerId)
+                        .toArray();
+        int idx = 0;
         while (running) {
             try {
-                if (keySet.isEmpty()) {
-                    Thread.sleep(50);
-                    continue;
-                }
-                String[] keys = keySet.toArray(new String[0]);
-                List<String> res = jedis.blpop(BLPOP_TIMEOUT_SEC, keys);
+                int partition = myPartitions[idx];
+                idx = (idx + 1) % myPartitions.length;
+                List<String> res = jedis.blpop(BLPOP_TIMEOUT_SEC, partitionKey(partition));
                 if (res == null || res.size() < 2) {
-                    continue; // timeout — re-issue (also picks up newly registered queues)
+                    continue; // timed out on this partition — move to the next
                 }
-                String door = res.get(0);
-                QueueMonitor monitor = registry.get(door.substring(PREFIX.length()));
+                String queueName = res.get(1); // [key, token] — token is the queue name
+                QueueMonitor monitor = registry.get(queueName);
                 if (monitor != null) {
                     wakesDelivered.incrementAndGet();
                     monitor.notifyMessageReady();
                 }
-            } catch (InterruptedException ie) {
-                Thread.currentThread().interrupt();
-                return;
             } catch (Exception e) {
-                if (running) {
-                    log.debug("doorbell listen error (shard {}): {}", shard, e.getMessage());
+                if (running && !Thread.currentThread().isInterrupted()) {
+                    log.debug(
+                            "doorbell listen error (listener {}): {}", listenerId, e.getMessage());
                     try {
                         Thread.sleep(200);
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                         return;
                     }
+                } else {
+                    return;
                 }
             }
         }
