@@ -18,6 +18,7 @@ import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.testcontainers.utility.DockerImageName;
@@ -29,6 +30,7 @@ import io.orkes.conductor.mq.redis.single.ConductorRedisQueue;
 import io.orkes.conductor.mq.util.FixedPortContainer;
 
 import com.google.common.util.concurrent.Uninterruptibles;
+import redis.clients.jedis.Connection;
 import redis.clients.jedis.DefaultJedisClientConfig;
 import redis.clients.jedis.HostAndPort;
 import redis.clients.jedis.JedisClientConfig;
@@ -91,7 +93,13 @@ public class ConductorRedisSentinelDoorbellQueueTest extends AbstractConductorQu
         JedisClientConfig clientConfig = DefaultJedisClientConfig.builder().build();
         Set<HostAndPort> sentinels = new HashSet<>();
         sentinels.add(sentinelAddr);
-        jedisSentineled = new JedisSentineled("mymaster", clientConfig, sentinels, clientConfig);
+        // Pool headroom: the 4 doorbell listeners each hold a blocking BLPOP connection, and the
+        // full suite borrows several more concurrently. JedisSentineled's default pool (maxTotal 8)
+        // would intermittently exhaust under that combination, so size it explicitly.
+        GenericObjectPoolConfig<Connection> poolConfig = new GenericObjectPoolConfig<>();
+        poolConfig.setMaxTotal(64);
+        jedisSentineled =
+                new JedisSentineled("mymaster", clientConfig, poolConfig, sentinels, clientConfig);
         doorbell = new RedisDoorbell(jedisSentineled, 4);
 
         sentinelQueue =

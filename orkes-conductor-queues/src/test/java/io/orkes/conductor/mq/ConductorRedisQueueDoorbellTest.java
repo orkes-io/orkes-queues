@@ -54,7 +54,12 @@ public class ConductorRedisQueueDoorbellTest extends AbstractConductorQueueTest 
 
         GenericObjectPoolConfig<Connection> poolConfig = new GenericObjectPoolConfig<>();
         poolConfig.setMinIdle(2);
-        poolConfig.setMaxTotal(16);
+        // Headroom: each of the doorbell's listener threads holds one blocking BLPOP connection for
+        // its full cycle, and the full suite (e.g. testConcurrency) borrows several more
+        // concurrently. A tight pool would intermittently exhaust under that combination, so size
+        // it
+        // well above (listeners + peak concurrent borrowers).
+        poolConfig.setMaxTotal(64);
         unifiedJedis = new JedisPooled(poolConfig, redis.getHost(), redis.getFirstMappedPort());
         doorbell = new RedisDoorbell(unifiedJedis, 4); // 4 sharded BLPOP listeners
 

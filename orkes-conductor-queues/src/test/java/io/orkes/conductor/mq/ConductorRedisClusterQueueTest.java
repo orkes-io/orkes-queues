@@ -18,6 +18,7 @@ import java.util.Set;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
 import org.junit.jupiter.api.BeforeAll;
 import org.testcontainers.utility.DockerImageName;
 
@@ -28,6 +29,7 @@ import io.orkes.conductor.mq.redis.cluster.ConductorRedisClusterQueue;
 import io.orkes.conductor.mq.util.FixedPortContainer;
 
 import com.google.common.util.concurrent.Uninterruptibles;
+import redis.clients.jedis.Connection;
 import redis.clients.jedis.HostAndPort;
 import redis.clients.jedis.JedisCluster;
 
@@ -66,7 +68,12 @@ public class ConductorRedisClusterQueueTest extends AbstractConductorQueueTest {
             hostAndPorts.add(new HostAndPort("localhost", port));
         }
 
-        jedisCluster = new JedisCluster(hostAndPorts);
+        // Pool headroom: the doorbell test runs 4 listener threads each holding a blocking BLPOP
+        // connection, on top of the full suite's concurrent borrowers. JedisCluster's default pool
+        // (maxTotal 8) would intermittently exhaust, so size it explicitly.
+        GenericObjectPoolConfig<Connection> poolConfig = new GenericObjectPoolConfig<>();
+        poolConfig.setMaxTotal(64);
+        jedisCluster = new JedisCluster(hostAndPorts, poolConfig);
         clusterQueue =
                 new ConductorRedisClusterQueue(
                         queueName,
