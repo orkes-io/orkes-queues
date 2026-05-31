@@ -1,7 +1,6 @@
 dependencies {
 
-    compileOnly "org.conductoross:conductor-redis-configuration:${versions.revConductor}"
-    testImplementation "org.conductoross:conductor-redis-configuration:${versions.revConductor}"
+    implementation "org.conductoross:conductor-redis-api:${versions.revConductor}"
     implementation "redis.clients:jedis:${versions.revJedis}"
 
     //Guava
