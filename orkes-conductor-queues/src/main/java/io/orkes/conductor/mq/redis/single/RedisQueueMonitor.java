@@ -80,6 +80,18 @@ public class RedisQueueMonitor extends QueueMonitor {
         return jedisPool.zcard(queueName);
     }
 
+    @Override
+    protected long readySize(double now) {
+        Long count = jedisPool.zcount(queueName, 0, now);
+        return count == null ? 0 : count;
+    }
+
+    @Override
+    protected double lowestScore() {
+        List<redis.clients.jedis.resps.Tuple> head = jedisPool.zrangeWithScores(queueName, 0, 0);
+        return (head == null || head.isEmpty()) ? -1 : head.get(0).getScore();
+    }
+
     private String loadScript() {
         try {
 

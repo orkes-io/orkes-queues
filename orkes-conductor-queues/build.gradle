@@ -10,10 +10,44 @@ dependencies {
     annotationProcessor 'org.projectlombok:lombok:1.18.36'
     testAnnotationProcessor 'org.projectlombok:lombok:1.18.36'
 
-    testImplementation "org.testcontainers:testcontainers:1.17.2"
+    testImplementation "org.testcontainers:testcontainers:${versions.revTestContainer}"
     testImplementation "org.junit.jupiter:junit-jupiter"
+    testRuntimeOnly "ch.qos.logback:logback-classic:1.4.11"
 }
 
 test {
     useJUnitPlatform()
+    // Use Docker API >= 1.40. Docker Desktop 4.x requires minimum 1.40; testcontainers'
+    // shaded docker-java defaults to 1.32. The shaded docker-java reads the version from
+    // the "api.version" Java system property (not from the DOCKER_API_VERSION env var).
+    systemProperty "api.version", "1.41"
+
+    // Forward benchmark opt-in properties to the forked test JVM (see QueueBenchmark).
+    ['bench', 'bench.redis.host', 'bench.redis.port', 'bench.out', 'bench.threads',
+     'bench.latency', 'bench.latency.consumers', 'bench.latency.wait',
+     'bench.latency.interval', 'bench.popBatch', 'bench.producerBatch',
+     'bench.batchAck', 'bench.noAck', 'bench.fanout', 'bench.fanout.queues',
+     'bench.fanout.workersPerQueue',
+     'bench.fanout.batch', 'bench.fanout.wait', 'bench.fanout.ratePerQueue',
+     'bench.fanout.publishers', 'bench.fanout.pool', 'bench.fanout.pollerThreads',
+     'bench.fanout.warmupMs', 'bench.fanout.measureMs',
+     'bench.cluster', 'bench.cluster.queues', 'bench.cluster.workersPerQueue',
+     'bench.cluster.batch', 'bench.cluster.wait', 'bench.cluster.ratePerQueue',
+     'bench.cluster.publishers', 'bench.cluster.pool', 'bench.cluster.pollerThreads',
+     'bench.cluster.warmupMs', 'bench.cluster.measureMs', 'bench.cluster.doorbell',
+     'bench.cluster.shards', 'bench.cluster.realDoorbell',
+     'bench.cmp', 'bench.cmp.queues', 'bench.cmp.workersPerQueue', 'bench.cmp.batch',
+     'bench.cmp.wait', 'bench.cmp.ratePerQueue', 'bench.cmp.publishers', 'bench.cmp.pool',
+     'bench.cmp.pollerThreads', 'bench.cmp.warmupMs', 'bench.cmp.measureMs', 'bench.cmp.backlogCap',
+     'orkes.queue.maxPollers', 'orkes.queue.demandPerPoller',
+     'orkes.queue.maxPollBackoffMs', 'orkes.queue.batchWindowMs',
+     'orkes.queue.maxCacheDepth', 'orkes.queue.batchGatherMs'].each { k ->
+        if (System.getProperty(k) != null) {
+            systemProperty k, System.getProperty(k)
+        }
+    }
+    testLogging {
+        showStandardStreams = true
+        events "passed", "skipped", "failed"
+    }
 }
