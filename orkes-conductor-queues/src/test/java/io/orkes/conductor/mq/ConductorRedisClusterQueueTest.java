@@ -23,6 +23,7 @@ import org.testcontainers.utility.DockerImageName;
 
 import com.netflix.conductor.redis.jedis.UnifiedJedisCommands;
 
+import io.orkes.conductor.mq.redis.RedisDoorbell;
 import io.orkes.conductor.mq.redis.cluster.ConductorRedisClusterQueue;
 import io.orkes.conductor.mq.util.FixedPortContainer;
 
@@ -82,5 +83,63 @@ public class ConductorRedisClusterQueueTest extends AbstractConductorQueueTest {
     protected ConductorQueue createQueue(String queueName) {
         return new ConductorRedisClusterQueue(
                 queueName, new UnifiedJedisCommands(jedisCluster), Executors.newFixedThreadPool(2));
+    }
+
+    /**
+     * Proves the {@link RedisDoorbell} is cluster-safe: with the doorbell enabled, a push rings a
+     * per-partition list (single-key {@code LPUSH}/{@code LTRIM}, hash-tagged to one slot) and the
+     * listener {@code BLPOP}s a single partition list — none of which can raise {@code CROSSSLOT}
+     * on a real cluster. Reuses this class's shared cluster container (a second cluster container
+     * can't run: the image advertises its nodes on fixed ports 7000-7005). Pushes a batch, drains
+     * it through a doorbell-wired queue, and asserts exactly-once delivery.
+     */
+    @org.junit.jupiter.api.Test
+    public void testDoorbellOnClusterDeliversWithoutCrossslot() {
+        RedisDoorbell doorbell = new RedisDoorbell(jedisCluster, 4);
+        try {
+            ConductorRedisClusterQueue q =
+                    new ConductorRedisClusterQueue(
+                            "cluster_doorbell_" + java.util.UUID.randomUUID(),
+                            new UnifiedJedisCommands(jedisCluster),
+                            Executors.newFixedThreadPool(2),
+                            doorbell);
+            q.flush();
+
+            int count = 200;
+            java.util.List<QueueMessage> messages = new java.util.ArrayList<>(count);
+            java.util.Set<String> ids = new java.util.HashSet<>();
+            for (int i = 0; i < count; i++) {
+                String id = "cd-" + i + "-" + java.util.UUID.randomUUID();
+                ids.add(id);
+                messages.add(new QueueMessage(id, "", 0, 0));
+            }
+            q.push(messages); // rings the doorbell on the cluster — must not CROSSSLOT
+
+            java.util.Set<String> seen = new java.util.HashSet<>();
+            int iterations = 0;
+            while (seen.size() < count && iterations++ < count + 100) {
+                java.util.List<QueueMessage> popped = q.pop(count, 200, TimeUnit.MILLISECONDS);
+                if (popped.isEmpty() && q.size() == 0) {
+                    break;
+                }
+                java.util.List<String> ackIds = new java.util.ArrayList<>();
+                for (QueueMessage m : popped) {
+                    org.junit.jupiter.api.Assertions.assertTrue(
+                            seen.add(m.getId()), "duplicate delivery " + m.getId());
+                    ackIds.add(m.getId());
+                }
+                q.ackAll(ackIds);
+            }
+
+            org.junit.jupiter.api.Assertions.assertEquals(
+                    count,
+                    seen.size(),
+                    "every message delivered exactly once via cluster doorbell");
+            org.junit.jupiter.api.Assertions.assertEquals(ids, seen, "delivered ids match pushed");
+            org.junit.jupiter.api.Assertions.assertEquals(0, q.size(), "queue empty after drain");
+            q.flush();
+        } finally {
+            doorbell.close();
+        }
     }
 }
