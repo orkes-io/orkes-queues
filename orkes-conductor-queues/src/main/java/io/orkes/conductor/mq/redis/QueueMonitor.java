@@ -16,8 +16,10 @@ import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import io.orkes.conductor.mq.QueueMessage;
 
@@ -152,8 +154,35 @@ public abstract class QueueMonitor {
 
     private volatile long currentBackoffMs = MIN_BACKOFF_MS;
 
-    /** Handle to the pending backoff-scheduled poll, so a new {@link #pop} can preempt it. */
-    private volatile ScheduledFuture<?> backoffFuture;
+    /**
+     * A scheduled backoff poll and the claim deciding who polls it: the scheduled body, or a {@link
+     * #wakePoller()} bringing it forward. Exactly one wins; the loser does nothing.
+     *
+     * <p>The claim exists because {@code cancel(false)} returning true does <em>not</em> mean the
+     * body was stopped — a {@code FutureTask} stays {@code NEW} while its runnable executes. Gating
+     * on it let both sides {@code submitPoll()}, giving two chains for one {@link #activePollers}
+     * slot; both released it when demand hit zero, and a negative slot is fatal.
+     */
+    private static final class PendingPoll {
+
+        private final AtomicBoolean claimed = new AtomicBoolean();
+
+        /** Assigned after {@code schedule()} returns, so a racing claim may still see null. */
+        private volatile ScheduledFuture<?> future;
+
+        boolean claim() {
+            return claimed.compareAndSet(false, true);
+        }
+    }
+
+    /**
+     * Registration for the most recent backoff-scheduled poll, so a new {@link #pop} can preempt
+     * it. Shared across chains, so a newer registration replaces an older one — harmless, since the
+     * displaced chain's body still fires, wins its own claim and polls. A wake then just preempts
+     * the newest chain rather than all of them, and multiple chains only exist on a hot queue where
+     * the backoff is pinned at {@link #MIN_BACKOFF_MS} anyway.
+     */
+    private final AtomicReference<PendingPoll> pending = new AtomicReference<>();
 
     /**
      * Wall-clock ({@code nanoTime}) at which the next poll is expected to run. Used to decide
@@ -200,6 +229,15 @@ public abstract class QueueMonitor {
     /** Total messages fetched from Redis into the cache. */
     public long getMessagesFetched() {
         return messagesFetched.get();
+    }
+
+    /**
+     * Poller slots currently reserved: {@code 0} when idle, otherwise 1..{@link
+     * #MAX_CONCURRENT_POLLERS}. Negative is always a bug and means the queue is stalled — exposed
+     * so that is observable rather than silent.
+     */
+    public int getActivePollers() {
+        return activePollers.get();
     }
 
     private final boolean cached;
@@ -442,8 +480,25 @@ public abstract class QueueMonitor {
                 // satisfied we must not leave a background poller spinning (that empty-poll
                 // overhead
                 // is exactly what this fast-path removes for the single-consumer case).
-                activePollers.decrementAndGet();
+                releasePoller();
             }
+        }
+    }
+
+    /**
+     * Releases one poller slot, clamped at zero: negative is an absorbing state, and clamping is
+     * safe because concurrent pollers are duplicate-safe (see {@link #MAX_CONCURRENT_POLLERS}) — at
+     * worst we keep a poller that could have stopped. An underflow means a path released a slot it
+     * did not hold, so log it loudly.
+     */
+    private void releasePoller() {
+        int before = activePollers.getAndUpdate(cur -> cur > 0 ? cur - 1 : 0);
+        if (before <= 0) {
+            log.warn(
+                    "poller slot released without being held for queue {} (activePollers was {}) —"
+                            + " clamped to 0",
+                    queueName,
+                    before);
         }
     }
 
@@ -451,6 +506,9 @@ public abstract class QueueMonitor {
      * Starts the dedicated poller for this queue if it is not already running. Cheap no-op when a
      * poll is already in flight. Called by every {@link #pop} so a queue that went idle (poller
      * stopped) is revived as soon as new demand appears.
+     *
+     * <p>Treats any non-positive count as "no poller running", so a count that somehow went
+     * negative self-heals here instead of permanently disabling the queue.
      */
     private void ensurePollerRunning() {
         if (liveDemand.get() <= 0) {
@@ -459,8 +517,22 @@ public abstract class QueueMonitor {
         // Ensure at least one poller. Additional (helper) pollers are spawned only from within a
         // *productive* poll cycle (see maybeSpawnHelper), so a queue that is merely being polled
         // hard while empty stays at a single poller and a single backoff cadence.
-        if (activePollers.compareAndSet(0, 1)) {
-            submitPoll();
+        while (true) {
+            int cur = activePollers.get();
+            if (cur > 0) {
+                return; // a poller already holds a slot
+            }
+            if (activePollers.compareAndSet(cur, 1)) {
+                if (cur < 0) {
+                    log.warn(
+                            "activePollers was negative ({}) for queue {} — reset to 1; the queue"
+                                    + " would otherwise never poll again",
+                            cur,
+                            queueName);
+                }
+                submitPoll();
+                return;
+            }
         }
     }
 
@@ -486,6 +558,9 @@ public abstract class QueueMonitor {
             return;
         }
         int cur = activePollers.get();
+        if (cur <= 0) {
+            return; // our chain holds a slot, so this is a corrupted count — let the heal fix it
+        }
         if (cur < desiredPollers(demand) && activePollers.compareAndSet(cur, cur + 1)) {
             submitPoll();
         }
@@ -500,7 +575,7 @@ public abstract class QueueMonitor {
             executorService.execute(this::pollCycle);
         } catch (RejectedExecutionException rejected) {
             // Executor is shutting down/saturated — release the slot so a later pop() can retry.
-            activePollers.decrementAndGet();
+            releasePoller();
         }
     }
 
@@ -609,7 +684,7 @@ public abstract class QueueMonitor {
             } else {
                 // This poller stops: release its slot, then re-check demand to avoid a lost wakeup
                 // where a pop() registered demand between our checks and the decrement.
-                activePollers.decrementAndGet();
+                releasePoller();
                 ensurePollerRunning();
             }
         }
@@ -626,37 +701,56 @@ public abstract class QueueMonitor {
             return;
         }
         nextPollDueNanos = System.nanoTime() + delayMs * 1_000_000L;
+        // Publish before scheduling, so a wake landing mid-schedule() can still claim it.
+        PendingPoll p = new PendingPoll();
+        pending.set(p);
         try {
-            backoffFuture =
+            ScheduledFuture<?> scheduled =
                     BACKOFF_SCHEDULER.schedule(
                             () -> {
-                                backoffFuture = null;
-                                submitPoll();
+                                if (p.claim()) {
+                                    pending.compareAndSet(p, null); // never clear a newer chain's
+                                    submitPoll();
+                                }
                             },
                             delayMs,
                             TimeUnit.MILLISECONDS);
+            p.future = scheduled;
         } catch (RejectedExecutionException rejected) {
-            activePollers.decrementAndGet();
+            // Nothing will fire this registration. Release only if we still own it — a wake may
+            // already have claimed p and carried the chain on.
+            pending.compareAndSet(p, null);
+            if (p.claim()) {
+                releasePoller();
+            }
         }
     }
 
     /**
      * Brings a backed-off poller forward when a new {@link #pop} arrives. The idle backoff can grow
      * up to {@code waitTime}; without this, a message that arrives (or a consumer that starts
-     * waiting with a shorter timeout) could sit until a long backoff sleep elapses. We cancel the
-     * pending sleep and poll immediately, continuing the same poller chain.
+     * waiting with a shorter timeout) could sit until a long backoff sleep elapses. We take over
+     * the pending sleep and poll immediately, continuing the same poller chain.
+     *
+     * <p>Taking over means winning {@link PendingPoll#claim()}, not cancelling — see {@link
+     * PendingPoll}. The cancel below is cleanup only and its result is deliberately ignored.
      */
     private void wakePoller() {
-        ScheduledFuture<?> f = backoffFuture;
-        if (f != null && !f.isDone() && f.cancel(false)) {
-            // Bring the next poll forward to now. Do NOT reset the backoff to the floor: under a
-            // steady push-wake stream that would restart the exponential ramp on every message and
-            // produce a burst of empty polls between arrivals. The backoff is the fallback cadence;
-            // a productive fetch (the hot-queue path) is what resets it.
-            backoffFuture = null;
-            nextPollDueNanos = System.nanoTime();
-            submitPoll();
+        PendingPoll p = pending.get();
+        if (p == null || !p.claim()) {
+            return; // nothing scheduled, or the firing body already took this poll
         }
+        pending.compareAndSet(p, null);
+        ScheduledFuture<?> f = p.future;
+        if (f != null) {
+            f.cancel(false);
+        }
+        // Bring the next poll forward to now. Do NOT reset the backoff to the floor: under a steady
+        // push-wake stream that would restart the exponential ramp on every message and produce a
+        // burst of empty polls between arrivals. The backoff is the fallback cadence; a productive
+        // fetch (the hot-queue path) is what resets it.
+        nextPollDueNanos = System.nanoTime();
+        submitPoll();
     }
 
     /**
