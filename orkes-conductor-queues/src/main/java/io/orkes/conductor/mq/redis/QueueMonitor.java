@@ -63,6 +63,8 @@ public abstract class QueueMonitor {
 
     private final ExecutorService executorService;
 
+    private final ScheduledExecutorService backoffScheduler;
+
     /**
      * Sum of the {@code count} argument of every currently in-flight {@link #pop} call. Incremented
      * on entry and decremented in a {@code finally}, so it is self-correcting and never leaks even
@@ -213,9 +215,17 @@ public abstract class QueueMonitor {
      * @param executorService the executor service for async polling
      */
     public QueueMonitor(String queueName, ExecutorService executorService) {
+        this(queueName, executorService, BACKOFF_SCHEDULER);
+    }
+
+    QueueMonitor(
+            String queueName,
+            ExecutorService executorService,
+            ScheduledExecutorService backoffScheduler) {
         this.clock = Clock.systemDefaultZone();
         this.peekedMessages = new LinkedBlockingQueue<>();
         this.executorService = executorService;
+        this.backoffScheduler = backoffScheduler;
         this.cached = !queueName.contains("RATE_LIMITED_WORKFLOW");
         this.queueName = queueName;
     }
@@ -628,7 +638,7 @@ public abstract class QueueMonitor {
         nextPollDueNanos = System.nanoTime() + delayMs * 1_000_000L;
         try {
             backoffFuture =
-                    BACKOFF_SCHEDULER.schedule(
+                    backoffScheduler.schedule(
                             () -> {
                                 backoffFuture = null;
                                 submitPoll();
