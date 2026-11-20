@@ -16,8 +16,10 @@ import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import io.orkes.conductor.mq.QueueMessage;
 
@@ -154,8 +156,31 @@ public abstract class QueueMonitor {
 
     private volatile long currentBackoffMs = MIN_BACKOFF_MS;
 
-    /** Handle to the pending backoff-scheduled poll, so a new {@link #pop} can preempt it. */
-    private volatile ScheduledFuture<?> backoffFuture;
+    /** The pending backoff-scheduled poll, so a new {@link #pop} can preempt it. */
+    private final AtomicReference<BackoffWake> pendingWake = new AtomicReference<>();
+
+    /**
+     * One scheduled backoff. The timer and {@link #wakePoller} must {@link #claim} it before they
+     * submit a poll, so one pause restarts the poller once. {@code ScheduledFuture.cancel(false)}
+     * cannot do this: it returns {@code true} while the timer task is already running.
+     */
+    private final class BackoffWake implements Runnable {
+        private final AtomicBoolean claimed = new AtomicBoolean();
+        private volatile ScheduledFuture<?> future;
+
+        boolean claim() {
+            return claimed.compareAndSet(false, true);
+        }
+
+        @Override
+        public void run() {
+            if (!claim()) {
+                return;
+            }
+            pendingWake.compareAndSet(this, null);
+            submitPoll();
+        }
+    }
 
     /**
      * Wall-clock ({@code nanoTime}) at which the next poll is expected to run. Used to decide
@@ -636,17 +661,15 @@ public abstract class QueueMonitor {
             return;
         }
         nextPollDueNanos = System.nanoTime() + delayMs * 1_000_000L;
+        BackoffWake wake = new BackoffWake();
+        pendingWake.set(wake);
         try {
-            backoffFuture =
-                    backoffScheduler.schedule(
-                            () -> {
-                                backoffFuture = null;
-                                submitPoll();
-                            },
-                            delayMs,
-                            TimeUnit.MILLISECONDS);
+            wake.future = backoffScheduler.schedule(wake, delayMs, TimeUnit.MILLISECONDS);
         } catch (RejectedExecutionException rejected) {
-            activePollers.decrementAndGet();
+            if (wake.claim()) {
+                pendingWake.compareAndSet(wake, null);
+                activePollers.decrementAndGet();
+            }
         }
     }
 
@@ -657,13 +680,17 @@ public abstract class QueueMonitor {
      * pending sleep and poll immediately, continuing the same poller chain.
      */
     private void wakePoller() {
-        ScheduledFuture<?> f = backoffFuture;
-        if (f != null && !f.isDone() && f.cancel(false)) {
+        BackoffWake wake = pendingWake.get();
+        if (wake != null && wake.claim()) {
             // Bring the next poll forward to now. Do NOT reset the backoff to the floor: under a
             // steady push-wake stream that would restart the exponential ramp on every message and
             // produce a burst of empty polls between arrivals. The backoff is the fallback cadence;
             // a productive fetch (the hot-queue path) is what resets it.
-            backoffFuture = null;
+            pendingWake.compareAndSet(wake, null);
+            ScheduledFuture<?> f = wake.future;
+            if (f != null) {
+                f.cancel(false);
+            }
             nextPollDueNanos = System.nanoTime();
             submitPoll();
         }
