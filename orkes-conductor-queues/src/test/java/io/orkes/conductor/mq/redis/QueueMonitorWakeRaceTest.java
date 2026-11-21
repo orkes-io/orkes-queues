@@ -117,13 +117,13 @@ class QueueMonitorWakeRaceTest {
 
         @Override
         public void execute(Runnable command) {
-            tasks.add(command);
+            submitted.incrementAndGet();
             try {
                 Thread.sleep(10);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
             }
-            submitted.incrementAndGet();
+            tasks.add(command);
             if (Thread.currentThread() == timerThread) {
                 timerInExecute.countDown();
                 await(releaseTimer);
